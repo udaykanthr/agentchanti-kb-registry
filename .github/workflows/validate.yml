@@ -1,0 +1,102 @@
+name: Validate KB Content
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Registry Content
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml jsonschema markdown-it-py
+
+      - name: Run validation script
+        id: validate
+        run: |
+          python scripts/validate.py 2>&1 | tee /tmp/validate_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Read validation output
+        id: read_output
+        run: |
+          OUTPUT=$(cat /tmp/validate_output.txt)
+          # Escape for GitHub Actions multiline
+          OUTPUT="${OUTPUT//'%'/'%25'}"
+          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
+          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
+          echo "content=$OUTPUT" >> $GITHUB_OUTPUT
+
+      - name: Comment validation results on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `${{ steps.read_output.outputs.content }}`;
+            const exitCode = '${{ steps.validate.outputs.exit_code }}';
+            const passed = exitCode === '0';
+
+            const header = passed
+              ? '## ✅ KB Validation Passed'
+              : '## ❌ KB Validation Failed';
+
+            const body = `${header}
+
+            <details>
+            <summary>Validation Output</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+
+            ${passed ? '_All checks passed. Ready for review._' : '_Please fix the issues above before merging._'}`;
+
+            // Find existing validation comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(c =>
+              c.body.includes('KB Validation') && c.user.type === 'Bot'
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail if validation failed
+        if: steps.validate.outputs.exit_code != '0'
+        run: |
+          echo "Validation failed. See PR comment for details."
+          exit 1

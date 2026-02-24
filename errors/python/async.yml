@@ -1,0 +1,215 @@
+- id: "py-async-001"
+  error_type: "RuntimeError"
+  severity: "critical"
+  pattern: "coroutine '(.+)' was never awaited"
+  cause: >
+    A coroutine function was called but not awaited. In Python, calling an async function
+    returns a coroutine object — it does not execute the function. You must await the
+    coroutine or schedule it with asyncio.create_task() for the body to run.
+  fix_template: |
+    import asyncio
+
+    async def fetch_data():
+        return "data"
+
+    # Wrong: calling without await — creates a coroutine object but never runs it
+    async def main():
+        result = fetch_data()   # RuntimeWarning: coroutine 'fetch_data' was never awaited
+        print(result)           # prints <coroutine object fetch_data at 0x...>
+
+    # Right: await the coroutine
+    async def main():
+        result = await fetch_data()
+        print(result)  # prints "data"
+
+    # Right: schedule as a task if you don't need the result immediately
+    async def main():
+        task = asyncio.create_task(fetch_data())
+        # ... do other work ...
+        result = await task  # get result when ready
+
+    asyncio.run(main())
+  tags:
+    - async
+    - await
+    - coroutine
+    - runtime
+  related_errors:
+    - py-async-002
+
+- id: "py-async-002"
+  error_type: "RuntimeError"
+  severity: "critical"
+  pattern: "no running event loop"
+  cause: >
+    asyncio functions that require a running event loop were called from synchronous
+    code outside of an async context. Common causes: calling asyncio.get_event_loop()
+    in Python 3.10+ without a running loop, or using async libraries from synchronous
+    callbacks.
+  fix_template: |
+    import asyncio
+
+    # Wrong: calling get_event_loop() in sync code (deprecated behavior in 3.10+)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(my_coro())
+
+    # Right: use asyncio.run() as the entry point
+    async def main():
+        await my_coro()
+
+    asyncio.run(main())
+
+    # Wrong: trying to await inside a synchronous function
+    def sync_function():
+        result = await async_function()  # SyntaxError + RuntimeError
+
+    # Right: make the caller async too
+    async def async_wrapper():
+        result = await async_function()
+        return result
+
+    # Right: use asyncio.run() to call async code from sync context
+    result = asyncio.run(async_wrapper())
+
+    # If you need the loop reference inside sync code:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+  tags:
+    - async
+    - event-loop
+    - runtime
+  related_errors:
+    - py-async-001
+    - py-runtime-001
+
+- id: "py-async-003"
+  error_type: "asyncio.TimeoutError"
+  severity: "warning"
+  pattern: "asyncio\\.TimeoutError"
+  cause: >
+    An operation did not complete within the specified timeout period set by
+    asyncio.wait_for() or asyncio.timeout() (Python 3.11+). The operation is
+    automatically cancelled when the timeout expires.
+  fix_template: |
+    import asyncio
+
+    async def slow_operation():
+        await asyncio.sleep(10)
+        return "done"
+
+    # Using asyncio.wait_for() with timeout
+    async def main():
+        try:
+            result = await asyncio.wait_for(slow_operation(), timeout=5.0)
+        except asyncio.TimeoutError:
+            print("Operation timed out after 5 seconds")
+            # Handle the timeout: retry, use cached value, or fail gracefully
+
+    # Python 3.11+ using asyncio.timeout() context manager
+    async def main_311():
+        try:
+            async with asyncio.timeout(5.0):
+                result = await slow_operation()
+        except TimeoutError:  # Note: TimeoutError, not asyncio.TimeoutError in 3.11+
+            print("Timed out")
+
+    # Note: after TimeoutError, the task is CANCELLED.
+    # Do not attempt to resume; start a fresh task if retry needed.
+    asyncio.run(main())
+  tags:
+    - async
+    - timeout
+    - asyncio
+
+- id: "py-async-004"
+  error_type: "CancelledError"
+  severity: "warning"
+  pattern: "asyncio\\.CancelledError"
+  cause: >
+    A task was cancelled via Task.cancel(). CancelledError is raised inside the
+    awaitable that is currently running. Incorrectly swallowing CancelledError
+    prevents proper task cleanup and can cause resource leaks.
+  fix_template: |
+    import asyncio
+
+    async def my_task():
+        try:
+            await asyncio.sleep(100)
+        except asyncio.CancelledError:
+            # CRITICAL: always re-raise CancelledError after cleanup
+            print("Task cancelled — cleaning up")
+            # ... cleanup resources here ...
+            raise  # must re-raise
+
+    # Wrong: swallowing CancelledError
+    async def bad_task():
+        try:
+            await asyncio.sleep(100)
+        except asyncio.CancelledError:
+            pass  # DO NOT do this — prevents proper cancellation
+
+    # Cancelling a task
+    async def main():
+        task = asyncio.create_task(my_task())
+        await asyncio.sleep(1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            print("Task was cancelled successfully")
+
+    asyncio.run(main())
+  tags:
+    - async
+    - cancel
+    - asyncio
+    - cleanup
+
+- id: "py-async-005"
+  error_type: "RuntimeError"
+  severity: "critical"
+  pattern: "Task .+ got Future .+ attached to a different loop"
+  cause: >
+    A Future or Task created in one event loop is being used in a different event loop.
+    This happens when you create asyncio primitives outside of the running loop, or
+    pass asyncio objects between threads with different loops.
+  fix_template: |
+    import asyncio
+
+    # Wrong: creating Future in wrong context
+    future = asyncio.Future()  # created outside any running loop
+
+    async def main():
+        await future  # RuntimeError: attached to different loop
+
+    # Right: create Future inside the running loop
+    async def main():
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        future.set_result("done")
+        result = await future
+        print(result)
+
+    # Wrong: passing asyncio objects between threads
+    # Right: use asyncio.run_coroutine_threadsafe() for thread-to-loop communication
+    import threading
+
+    def thread_function(loop):
+        future = asyncio.run_coroutine_threadsafe(my_coroutine(), loop)
+        result = future.result(timeout=10)  # blocking call from thread
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        t = threading.Thread(target=thread_function, args=(loop,))
+        t.start()
+        t.join()
+
+    asyncio.run(main())
+  tags:
+    - async
+    - event-loop
+    - threading
+    - future

@@ -1,0 +1,223 @@
+- id: "js-react-001"
+  error_type: "Error"
+  severity: "critical"
+  pattern: "Cannot update a component \\(`(.+)`\\) while rendering a different component"
+  cause: >
+    A state update (setState or a state setter from useState) is being triggered
+    synchronously during the render phase of another component. React prohibits
+    this because it causes unpredictable re-renders. This typically happens when
+    a child component calls a parent's state setter directly during its own render.
+  fix_template: |
+    // Wrong: calling parent's setState during child render
+    function Parent() {
+      const [count, setCount] = useState(0);
+      return <Child onRender={() => setCount(c => c + 1)} />;
+    }
+
+    function Child({ onRender }) {
+      onRender();  // Called during render — triggers the error
+      return <div>Child</div>;
+    }
+
+    // Right: move state updates to event handlers or useEffect
+    function Child({ onMount }) {
+      useEffect(() => {
+        onMount();  // called after render, not during
+      }, [onMount]);
+      return <div>Child</div>;
+    }
+
+    // Right: use useEffect in the parent to derive state
+    function Parent() {
+      const [data, setData] = useState(null);
+      const [processed, setProcessed] = useState(null);
+
+      useEffect(() => {
+        if (data) {
+          setProcessed(processData(data));  // safe: inside useEffect
+        }
+      }, [data]);
+
+      return <Child data={data} />;
+    }
+  tags:
+    - react
+    - render
+    - state
+    - hooks
+
+- id: "js-react-002"
+  error_type: "Warning"
+  severity: "warning"
+  pattern: "Each child in a list should have a unique \"key\" prop"
+  cause: >
+    React requires a stable, unique key prop on each element when rendering arrays.
+    Without keys, React cannot efficiently reconcile the virtual DOM and may display
+    incorrect data or cause subtle bugs with component state.
+  fix_template: |
+    // Wrong: no key prop
+    const list = items.map(item => <li>{item.name}</li>);
+
+    // Wrong: using array index as key (causes bugs with reordering/filtering)
+    const list = items.map((item, index) => <li key={index}>{item.name}</li>);
+
+    // Right: use a stable, unique ID from the data
+    const list = items.map(item => <li key={item.id}>{item.name}</li>);
+
+    // Right: for static lists without IDs, use a stable string key
+    const tabs = ['Overview', 'Details', 'Reviews'];
+    const tabElements = tabs.map(tab => <button key={tab}>{tab}</button>);
+
+    // Key rules:
+    // 1. Keys must be unique AMONG SIBLINGS (not globally)
+    // 2. Keys must be STABLE — same item always gets same key
+    // 3. Keys must be STRINGS or NUMBERS
+    // 4. Never use Math.random() or Date.now() as keys — changes every render
+  tags:
+    - react
+    - list
+    - key
+    - reconciliation
+
+- id: "js-react-003"
+  error_type: "Error"
+  severity: "critical"
+  pattern: "Cannot read propert(?:y|ies) of null.*useState|Invalid hook call"
+  cause: >
+    React hooks (useState, useEffect, etc.) are being called outside of a React
+    function component or custom hook, or the React version being used in the
+    component tree is different from the one hooks were defined with (often caused
+    by duplicate React installations).
+  fix_template: |
+    // Wrong: calling hooks inside a class component
+    class MyComponent extends React.Component {
+      render() {
+        const [count, setCount] = useState(0);  // Error: hooks only in function components
+        return <div>{count}</div>;
+      }
+    }
+
+    // Right: use function component
+    function MyComponent() {
+      const [count, setCount] = useState(0);
+      return <div>{count}</div>;
+    }
+
+    // Wrong: calling hooks conditionally or inside non-hook functions
+    function MyComponent({ isLoggedIn }) {
+      if (isLoggedIn) {
+        const [data, setData] = useState(null);  // conditional hook — violates rules
+      }
+    }
+
+    // Right: always call hooks at the top level
+    function MyComponent({ isLoggedIn }) {
+      const [data, setData] = useState(null);
+      if (!isLoggedIn) return null;
+      return <div>{data}</div>;
+    }
+
+    // Duplicate React fix: check package.json and ensure only one React version
+    // npm ls react  — should show only one version
+    // Add to package.json if using a library that bundles React:
+    // "resolutions": { "react": "^18.0.0" }
+  tags:
+    - react
+    - hooks
+    - rules-of-hooks
+    - invalid-hook-call
+
+- id: "js-react-004"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "React has detected a change in the order of Hooks"
+  cause: >
+    The Rules of Hooks require that hooks are always called in the same order on every
+    render. Calling hooks conditionally, inside loops, or inside nested functions
+    violates this and causes React to associate hook state with the wrong hook call.
+  fix_template: |
+    // Wrong: hook called conditionally
+    function Profile({ userId, showDetails }) {
+      if (!userId) return null;  // early return BEFORE hooks
+
+      const [user, setUser] = useState(null);  // hook after conditional return
+      useEffect(() => { fetchUser(userId).then(setUser); }, [userId]);
+      // ...
+    }
+
+    // Right: call all hooks before any early returns
+    function Profile({ userId, showDetails }) {
+      const [user, setUser] = useState(null);  // hooks first
+      useEffect(() => {
+        if (userId) fetchUser(userId).then(setUser);
+      }, [userId]);
+
+      if (!userId) return null;  // early return AFTER hooks
+      return <div>{user?.name}</div>;
+    }
+
+    // Wrong: hook inside a condition
+    function Counter({ double }) {
+      let count;
+      if (double) {
+        [count] = useState(0);  // Wrong
+      }
+    }
+
+    // Right: use the value conditionally, not the hook
+    function Counter({ double }) {
+      const [count, setCount] = useState(0);
+      const displayCount = double ? count * 2 : count;
+      return <div>{displayCount}</div>;
+    }
+  tags:
+    - react
+    - hooks
+    - rules-of-hooks
+    - conditional
+
+- id: "js-react-005"
+  error_type: "Error"
+  severity: "critical"
+  pattern: "Maximum update depth exceeded\\. This can happen when a component calls setState inside useEffect"
+  cause: >
+    An infinite re-render loop: a state update triggers a re-render, which triggers
+    another state update, and so on. Most commonly caused by a missing or incorrect
+    useEffect dependency array, or calling setState unconditionally inside useEffect.
+  fix_template: |
+    // Wrong: no dependency array — runs after EVERY render
+    useEffect(() => {
+      setCount(count + 1);  // updates state → re-render → runs effect → updates state → ...
+    });
+
+    // Wrong: dependency array includes a value that changes every render
+    useEffect(() => {
+      setItems(processItems(items));
+    }, [items]);  // items changes → effect runs → setItems → items changes → ...
+
+    // Right: add a condition before updating state
+    useEffect(() => {
+      if (items.length > 0 && !processed) {
+        setProcessed(processItems(items));
+      }
+    }, [items, processed]);
+
+    // Right: use functional update to avoid depending on current value
+    useEffect(() => {
+      const timer = setInterval(() => {
+        setCount(prev => prev + 1);  // functional form — no dependency on count
+      }, 1000);
+      return () => clearInterval(timer);
+    }, []);  // empty array: runs once
+
+    // Right: memoize stable object/array dependencies
+    const config = useMemo(() => ({ threshold: 10 }), []);
+    useEffect(() => {
+      processWithConfig(config);
+    }, [config]);  // config is stable — won't trigger infinite loop
+  tags:
+    - react
+    - useEffect
+    - infinite-loop
+    - state
+    - dependency-array

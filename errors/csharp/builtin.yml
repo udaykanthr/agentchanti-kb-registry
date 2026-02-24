@@ -1,0 +1,282 @@
+- id: "cs-nre-001"
+  error_type: "NullReferenceException"
+  severity: "critical"
+  pattern: "System\\.NullReferenceException: Object reference not set to an instance of an object"
+  cause: >
+    A method was called or a member was accessed on a null object reference. This is
+    the C# equivalent of Java's NullPointerException. With C# 8+ nullable reference types
+    (NRTs), many of these can be caught at compile time with proper annotation.
+  fix_template: |
+    // Wrong:
+    string name = null;
+    int length = name.Length;  // NullReferenceException
+
+    // Fix 1: null check
+    if (name != null)
+    {
+        int length = name.Length;
+    }
+
+    // Fix 2: null conditional operator (?.)
+    int? length = name?.Length;  // returns null instead of throwing
+
+    // Fix 3: null coalescing operator (??)
+    string displayName = name ?? "Anonymous";
+
+    // Fix 4: null coalescing assignment (??=)
+    name ??= "Default";  // assigns only if null
+
+    // Fix 5: enable nullable reference types in .csproj
+    // <Nullable>enable</Nullable>
+    // Then annotate: string? name = null;  vs  string name = "required";
+    // Compiler warns when accessing nullable without null check
+
+    // Fix 6: use ArgumentNullException.ThrowIfNull (C# 10+)
+    ArgumentNullException.ThrowIfNull(name, nameof(name));
+  tags:
+    - csharp
+    - null
+    - nre
+    - nullable
+
+- id: "cs-ioe-001"
+  error_type: "InvalidOperationException"
+  severity: "warning"
+  pattern: "System\\.InvalidOperationException: (.+)"
+  cause: >
+    The object is in a state that does not support the requested operation. This is a
+    general-purpose exception for "you shouldn't call this right now." Common cases:
+    calling First() on an empty sequence, using an enumerator after modifying the
+    collection, or accessing a completed/disposed task.
+  fix_template: |
+    using System.Linq;
+
+    // Wrong: First() on empty collection
+    var items = new List<int>();
+    var first = items.First();  // InvalidOperationException: Sequence contains no elements
+
+    // Fix: use FirstOrDefault()
+    var first = items.FirstOrDefault();  // returns 0 (int default) if empty
+    var firstOrNull = items.FirstOrDefault();  // or check and handle
+    if (!items.Any())
+    {
+        // handle empty case
+        return;
+    }
+    var first = items.First();
+
+    // Wrong: Single() when multiple elements match
+    var user = users.Single(u => u.Role == "Admin");  // throws if 0 or 2+ admins
+
+    // Fix: use SingleOrDefault() or First() based on intent
+    var user = users.SingleOrDefault(u => u.Role == "Admin");
+    if (user == null) { /* no admin found */ }
+
+    // Wrong: modifying collection during enumeration
+    foreach (var item in list)
+    {
+        list.Remove(item);  // InvalidOperationException: collection was modified
+    }
+
+    // Fix:
+    list.RemoveAll(item => shouldRemove(item));  // or ToList() copy first
+  tags:
+    - csharp
+    - linq
+    - sequence
+    - enumeration
+
+- id: "cs-ane-001"
+  error_type: "ArgumentNullException"
+  severity: "warning"
+  pattern: "System\\.ArgumentNullException: Value cannot be null\\..*Parameter name: (.+)"
+  cause: >
+    A null value was passed to a parameter that explicitly disallows null. Many .NET
+    library methods and well-written application code throw ArgumentNullException
+    to provide clear feedback about which parameter is null, rather than letting
+    a NullReferenceException occur deeper in the call stack.
+  fix_template: |
+    // The exception tells you exactly which parameter is null — read it!
+    // "Value cannot be null. (Parameter 'name')" → name is null
+
+    // Guard your own methods with ArgumentNullException
+    public void Process(string name, IEnumerable<Item> items)
+    {
+        // C# 10+ / .NET 6+:
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(items);
+
+        // Pre .NET 6:
+        if (name is null) throw new ArgumentNullException(nameof(name));
+        if (items is null) throw new ArgumentNullException(nameof(items));
+
+        // ... rest of method
+    }
+
+    // Avoid propagating null values from API responses/user input:
+    var apiResponse = await client.GetUserAsync(id);
+    string userName = apiResponse?.Name
+        ?? throw new InvalidOperationException($"User {id} has no name");
+
+    // With nullable reference types enabled:
+    public void Process(string name)  // string (non-nullable) — compiler ensures non-null callers
+    {
+        // ...
+    }
+  tags:
+    - csharp
+    - argument
+    - null
+    - guard
+
+- id: "cs-soe-001"
+  error_type: "StackOverflowException"
+  severity: "critical"
+  pattern: "System\\.StackOverflowException"
+  cause: >
+    Infinite or excessively deep recursion exhausted the call stack. In .NET,
+    StackOverflowException cannot be caught in user code (unlike Java) and will
+    crash the process. This is almost always a missing base case in recursion or
+    an accidentally self-referencing property.
+  fix_template: |
+    // Wrong: missing base case
+    public int Factorial(int n) => n * Factorial(n - 1);  // StackOverflowException
+
+    // Right: with base case
+    public int Factorial(int n) => n <= 1 ? 1 : n * Factorial(n - 1);
+
+    // Right: iterative for large inputs (no stack risk)
+    public long Factorial(int n)
+    {
+        long result = 1;
+        for (int i = 2; i <= n; i++) result *= i;
+        return result;
+    }
+
+    // Common cause: auto-property setter calling itself
+    private string _name;
+    public string Name
+    {
+        get => _name;
+        set => Name = value;  // StackOverflow: calls the setter recursively!
+    }
+
+    // Right:
+    public string Name
+    {
+        get => _name;
+        set => _name = value;  // set backing field, not the property itself
+    }
+
+    // Common cause: JSON serialization with circular references
+    // Fix: use [JsonIgnore] or configure ReferenceHandler.Preserve
+    public class Order
+    {
+        [JsonIgnore]  // break the circular reference for serialization
+        public Customer Customer { get; set; }
+    }
+  tags:
+    - csharp
+    - recursion
+    - stack
+    - critical
+
+- id: "cs-tce-001"
+  error_type: "TaskCanceledException"
+  severity: "warning"
+  pattern: "System\\.Threading\\.Tasks\\.TaskCanceledException"
+  cause: >
+    An awaited operation was cancelled via a CancellationToken. This is intentional
+    behavior when cancellation is requested (user navigates away, request times out,
+    application shutting down). It should be handled at the appropriate layer, not
+    swallowed silently.
+  fix_template: |
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    // Correct handling: catch at the boundary and handle appropriately
+    public async Task<Result> FetchDataAsync(CancellationToken ct)
+    {
+        try
+        {
+            var data = await httpClient.GetAsync("/api/data", ct);
+            return await Process(data, ct);
+        }
+        catch (TaskCanceledException) when (ct.IsCancellationRequested)
+        {
+            // User or system requested cancellation — this is normal
+            logger.LogInformation("FetchDataAsync was cancelled");
+            return Result.Cancelled;
+        }
+        catch (TaskCanceledException)
+        {
+            // Timeout occurred (HttpClient timeout) — different scenario
+            logger.LogWarning("FetchDataAsync timed out");
+            throw;  // or return Result.TimedOut
+        }
+    }
+
+    // Pass CancellationToken through your call chain
+    public async Task HandleRequest(HttpContext ctx)
+    {
+        var ct = ctx.RequestAborted;  // ASP.NET cancellation token
+        var result = await FetchDataAsync(ct);  // pass it down
+    }
+
+    // Set HttpClient timeout via CancellationTokenSource
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var result = await DoWorkAsync(cts.Token);
+  tags:
+    - csharp
+    - async
+    - cancellation
+    - task
+
+- id: "cs-ode-001"
+  error_type: "ObjectDisposedException"
+  severity: "warning"
+  pattern: "System\\.ObjectDisposedException: Cannot access a disposed object"
+  cause: >
+    A method or property was accessed on an object after it was disposed (its Dispose()
+    method was called or it was used in a using block that ended). Common with HttpClient,
+    DbContext, Stream, and other IDisposable objects.
+  fix_template: |
+    // Wrong: using object after disposal
+    using var stream = new FileStream("file.txt", FileMode.Open);
+    var reader = new StreamReader(stream);
+    // stream disposed here at end of using block...
+
+    var content = reader.ReadToEnd();  // ObjectDisposedException: stream is disposed
+
+    // Fix: keep the using scope wide enough
+    using var stream = new FileStream("file.txt", FileMode.Open);
+    using var reader = new StreamReader(stream);
+    var content = reader.ReadToEnd();
+    // both disposed after this block
+
+    // Wrong: sharing a single HttpClient instance then disposing it
+    using var client = new HttpClient();  // disposed after each request!
+    services.AddSingleton(client);  // will be disposed prematurely
+
+    // Right: use IHttpClientFactory (registers as singleton, manages lifecycle)
+    services.AddHttpClient<MyService>();
+
+    public class MyService
+    {
+        private readonly HttpClient _client;
+        public MyService(HttpClient client) { _client = client; }
+        // HttpClient injected by factory — do NOT dispose it here
+    }
+
+    // Check if object is disposed before use (implement in your own IDisposable classes):
+    private bool _disposed = false;
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);  // .NET 7+
+    }
+  tags:
+    - csharp
+    - disposed
+    - idisposable
+    - using
+    - lifetime

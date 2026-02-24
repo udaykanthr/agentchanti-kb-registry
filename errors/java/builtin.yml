@@ -1,0 +1,271 @@
+- id: "java-npe-001"
+  error_type: "NullPointerException"
+  severity: "critical"
+  pattern: "java\\.lang\\.NullPointerException"
+  cause: >
+    A method was called or a field was accessed on a null object reference. Java 14+
+    provides helpful NullPointerExceptions that describe which variable is null.
+    Common causes: uninitialized fields, methods returning null, Optional not checked,
+    or autoboxing null Integer/Boolean to primitive.
+  fix_template: |
+    // Wrong:
+    String name = null;
+    int length = name.length();  // NullPointerException
+
+    // Fix 1: null check
+    if (name != null) {
+        int length = name.length();
+    }
+
+    // Fix 2: use Optional (Java 8+)
+    Optional<String> maybeName = Optional.ofNullable(getName());
+    int length = maybeName.map(String::length).orElse(0);
+
+    // Fix 3: use Objects.requireNonNull to fail fast with a descriptive message
+    import java.util.Objects;
+    String name = Objects.requireNonNull(getName(), "name must not be null");
+
+    // Fix 4: use @NonNull annotations (Lombok, Spring, Jakarta) for documentation
+    public void greet(@NonNull String name) {
+        System.out.println("Hello, " + name);
+    }
+
+    // Autoboxing NPE:
+    Integer count = null;
+    int total = count + 1;  // NullPointerException during unboxing
+
+    // Fix: use primitive int, or check before unboxing
+    int count = 0;  // use primitive
+    // or:
+    Integer count = null;
+    int total = (count != null ? count : 0) + 1;
+  tags:
+    - java
+    - npe
+    - null
+    - critical
+
+- id: "java-cce-001"
+  error_type: "ClassCastException"
+  severity: "warning"
+  pattern: "java\\.lang\\.ClassCastException: class (.+) cannot be cast to class (.+)"
+  cause: >
+    An object is being cast to a type it is not an instance of. Java allows explicit
+    downcasting syntax but throws ClassCastException at runtime if the actual object
+    is not compatible. Common in collections that lose type info (raw types), deserialization,
+    or incorrect use of instanceof.
+  fix_template: |
+    // Wrong:
+    Object obj = "Hello";
+    Integer num = (Integer) obj;  // ClassCastException
+
+    // Fix 1: check with instanceof before casting
+    Object obj = "Hello";
+    if (obj instanceof String str) {  // Java 16+ pattern matching instanceof
+        System.out.println(str.length());
+    }
+
+    // Pre Java 16:
+    if (obj instanceof String) {
+        String str = (String) obj;
+        System.out.println(str.length());
+    }
+
+    // Wrong: raw collection loses type info
+    List rawList = new ArrayList();
+    rawList.add("text");
+    rawList.add(42);
+    String s = (String) rawList.get(1);  // ClassCastException at runtime
+
+    // Fix: use generics
+    List<String> stringList = new ArrayList<>();
+    stringList.add("text");  // compiler enforces type
+  tags:
+    - java
+    - cast
+    - generics
+    - instanceof
+
+- id: "java-soe-001"
+  error_type: "StackOverflowError"
+  severity: "critical"
+  pattern: "java\\.lang\\.StackOverflowError"
+  cause: >
+    The call stack has exceeded its maximum size due to infinite or excessively deep
+    recursion. This is an Error (not Exception), meaning it is usually unrecoverable.
+    Common causes: missing base case in recursion, circular object references in
+    toString/equals/hashCode, or accidentally calling the same method from itself.
+  fix_template: |
+    // Wrong: missing base case
+    public int factorial(int n) {
+        return n * factorial(n - 1);  // never stops
+    }
+
+    // Right: add base case
+    public int factorial(int n) {
+        if (n <= 1) return 1;
+        return n * factorial(n - 1);
+    }
+
+    // Right: use iteration for large inputs
+    public long factorialIterative(int n) {
+        long result = 1;
+        for (int i = 2; i <= n; i++) result *= i;
+        return result;
+    }
+
+    // Common in JPA: circular toString() causing StackOverflow
+    // Fix: exclude the bidirectional relationship from toString()
+    @Entity
+    public class Order {
+        @OneToMany(mappedBy = "order")
+        @ToString.Exclude  // Lombok: exclude from toString
+        private List<OrderItem> items;
+    }
+
+    // Or implement toString manually, avoiding circular reference
+    @Override
+    public String toString() {
+        return "Order{id=" + id + ", itemCount=" + items.size() + "}";
+    }
+  tags:
+    - java
+    - recursion
+    - stack
+    - critical
+
+- id: "java-aioob-001"
+  error_type: "ArrayIndexOutOfBoundsException"
+  severity: "warning"
+  pattern: "java\\.lang\\.ArrayIndexOutOfBoundsException: Index (\\d+) out of bounds for length (\\d+)"
+  cause: >
+    An array is accessed with an index that is negative or greater than or equal to
+    the array's length. Arrays in Java are 0-indexed. Common causes: off-by-one errors
+    (using length instead of length-1), empty arrays, or dynamic index calculations.
+  fix_template: |
+    // Wrong:
+    int[] nums = {1, 2, 3};
+    System.out.println(nums[3]);  // ArrayIndexOutOfBoundsException (valid: 0, 1, 2)
+
+    // Right: check bounds
+    int index = 3;
+    if (index >= 0 && index < nums.length) {
+        System.out.println(nums[index]);
+    }
+
+    // Wrong: off-by-one in loop
+    for (int i = 0; i <= nums.length; i++) {  // should be < not <=
+        System.out.println(nums[i]);
+    }
+
+    // Right:
+    for (int i = 0; i < nums.length; i++) {
+        System.out.println(nums[i]);
+    }
+
+    // Better: use enhanced for loop when you don't need the index
+    for (int num : nums) {
+        System.out.println(num);
+    }
+
+    // Prefer ArrayList when size is dynamic:
+    List<Integer> list = new ArrayList<>(Arrays.asList(1, 2, 3));
+    // list.get() throws IndexOutOfBoundsException (different exception, same concept)
+  tags:
+    - java
+    - array
+    - bounds
+    - index
+
+- id: "java-cme-001"
+  error_type: "ConcurrentModificationException"
+  severity: "warning"
+  pattern: "java\\.util\\.ConcurrentModificationException"
+  cause: >
+    A collection was modified while being iterated using a for-each loop or an Iterator.
+    The collection tracks a modification count, and if it changes during iteration, it
+    throws ConcurrentModificationException as a fail-fast safety mechanism.
+  fix_template: |
+    // Wrong: modifying list inside for-each
+    List<String> names = new ArrayList<>(Arrays.asList("Alice", "Bob", "Charlie"));
+    for (String name : names) {
+        if (name.startsWith("B")) {
+            names.remove(name);  // ConcurrentModificationException
+        }
+    }
+
+    // Right option 1: use Iterator.remove()
+    Iterator<String> it = names.iterator();
+    while (it.hasNext()) {
+        if (it.next().startsWith("B")) {
+            it.remove();  // safe removal during iteration
+        }
+    }
+
+    // Right option 2: use removeIf() (Java 8+)
+    names.removeIf(name -> name.startsWith("B"));
+
+    // Right option 3: collect removals, then remove
+    List<String> toRemove = names.stream()
+        .filter(n -> n.startsWith("B"))
+        .collect(Collectors.toList());
+    names.removeAll(toRemove);
+
+    // Right option 4: for concurrent modifications across threads, use CopyOnWriteArrayList
+    List<String> safeList = new CopyOnWriteArrayList<>(names);
+  tags:
+    - java
+    - collection
+    - concurrent
+    - iterator
+
+- id: "java-oom-001"
+  error_type: "OutOfMemoryError"
+  severity: "critical"
+  pattern: "java\\.lang\\.OutOfMemoryError: (Java heap space|GC overhead limit exceeded|Metaspace)"
+  cause: >
+    The JVM has exhausted available memory. "Java heap space" means objects are filling
+    heap; "GC overhead limit exceeded" means GC is spending >98% of time collecting
+    with <2% reclaimed; "Metaspace" means class definitions are exhausting non-heap memory.
+    Common causes: memory leaks (holding references longer than needed), loading too much
+    data at once, infinite growth of a cache/list.
+  fix_template: |
+    // Increase heap size (short-term fix only — investigate root cause):
+    // java -Xmx4g -Xms1g MyApp
+
+    // Finding leaks: use heap dumps
+    // java -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/heapdump.hprof MyApp
+    // Then analyze with Eclipse Memory Analyzer (MAT) or VisualVM
+
+    // Common leak: static collection accumulating objects
+    // Wrong:
+    private static final Map<String, Object> CACHE = new HashMap<>();
+    // items added but never removed → grows forever
+
+    // Right: use bounded cache with eviction
+    private static final Map<String, Object> CACHE = Collections.synchronizedMap(
+        new LinkedHashMap<String, Object>(100, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
+                return size() > 100;  // keep max 100 entries
+            }
+        }
+    );
+
+    // Better: use Caffeine cache
+    Cache<String, Object> cache = Caffeine.newBuilder()
+        .maximumSize(1000)
+        .expireAfterWrite(10, TimeUnit.MINUTES)
+        .build();
+
+    // Stream large datasets instead of loading all at once:
+    // Wrong: loading all rows
+    List<Record> all = db.findAll();  // millions of rows → OOM
+    // Right: use pagination or streams
+    db.findAllAsStream().forEach(record -> process(record));
+  tags:
+    - java
+    - memory
+    - oom
+    - heap
+    - leak

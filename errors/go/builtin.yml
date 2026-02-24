@@ -1,0 +1,297 @@
+- id: "go-nil-001"
+  error_type: "panic"
+  severity: "critical"
+  pattern: "panic: runtime error: invalid memory address or nil pointer dereference"
+  cause: >
+    A nil pointer (or nil interface) was dereferenced — you accessed a field or called
+    a method on a nil pointer. Go does not have null safety at the type level; any
+    pointer, interface, map, channel, or slice can be nil. This is Go's equivalent
+    of NullPointerException.
+  fix_template: |
+    // Wrong:
+    var user *User
+    fmt.Println(user.Name)  // panic: nil pointer dereference
+
+    // Fix 1: check for nil before use
+    if user != nil {
+        fmt.Println(user.Name)
+    }
+
+    // Fix 2: return zero value instead of nil pointer
+    func getUser(id int) *User {
+        user := db.Find(id)
+        if user == nil {
+            return &User{}  // return empty user instead of nil
+        }
+        return user
+    }
+
+    // Fix 3: use the comma-ok pattern for type assertions
+    var i interface{} = "hello"
+    val, ok := i.(*User)
+    if !ok {
+        // i is not a *User — val is nil, don't use it
+        return
+    }
+    fmt.Println(val.Name)  // safe
+
+    // Fix 4: initialize pointers before use
+    var config *Config = &Config{Host: "localhost"}  // initialized, not nil
+
+    // Common nil interface gotcha:
+    var err error = nil  // error interface, nil value
+    // This is fine. But:
+    var myErr *MyError = nil
+    var err error = myErr  // err != nil even though myErr is nil! (non-nil interface with nil value)
+    // Fix: return nil directly, not a typed nil pointer
+    func doSomething() error {
+        return nil  // not return (*MyError)(nil)
+    }
+  tags:
+    - go
+    - nil
+    - pointer
+    - panic
+    - critical
+
+- id: "go-index-001"
+  error_type: "panic"
+  severity: "warning"
+  pattern: "panic: runtime error: index out of range \\[(\\d+)\\] with length (\\d+)"
+  cause: >
+    A slice or array was accessed with an index that is out of bounds (negative or
+    >= length). Unlike some languages, Go does not return a default value — it panics.
+    This commonly happens with empty slices, off-by-one errors, or assumptions about
+    minimum slice length.
+  fix_template: |
+    // Wrong:
+    items := []string{"a", "b"}
+    fmt.Println(items[2])  // panic: index out of range [2] with length 2
+
+    // Fix 1: check length before indexing
+    if len(items) > 2 {
+        fmt.Println(items[2])
+    }
+
+    // Fix 2: iterate safely
+    for i, item := range items {
+        fmt.Printf("%d: %s\n", i, item)
+    }
+
+    // Fix 3: use recover() to catch panics at boundary (API handlers, etc.)
+    func safeGet(items []string, i int) (s string, err error) {
+        defer func() {
+            if r := recover(); r != nil {
+                err = fmt.Errorf("index %d out of range (len=%d)", i, len(items))
+            }
+        }()
+        return items[i], nil
+    }
+
+    // Common pattern: check for empty before accessing first/last element
+    if len(items) == 0 {
+        return nil, errors.New("no items")
+    }
+    first := items[0]
+    last := items[len(items)-1]
+  tags:
+    - go
+    - slice
+    - index
+    - bounds
+    - panic
+
+- id: "go-interface-001"
+  error_type: "panic"
+  severity: "warning"
+  pattern: "panic: interface conversion: interface \\{\\} is (.+), not (.+)"
+  cause: >
+    A type assertion failed at runtime. You asserted that an interface value holds
+    a specific concrete type, but the actual value is a different type. The two-value
+    form of type assertion (val, ok := ...) prevents the panic.
+  fix_template: |
+    // Wrong: direct type assertion without checking
+    var data interface{} = 42
+    s := data.(string)  // panic: interface conversion: int, not string
+
+    // Fix: use the comma-ok idiom
+    var data interface{} = 42
+    s, ok := data.(string)
+    if !ok {
+        fmt.Printf("expected string, got %T\n", data)
+        return
+    }
+    fmt.Println(s)
+
+    // Fix: use type switch for multiple possible types
+    switch v := data.(type) {
+    case string:
+        fmt.Println("string:", v)
+    case int:
+        fmt.Println("int:", v)
+    case []byte:
+        fmt.Println("bytes:", string(v))
+    default:
+        fmt.Printf("unknown type: %T\n", v)
+    }
+  tags:
+    - go
+    - interface
+    - type-assertion
+    - panic
+
+- id: "go-goroutine-001"
+  error_type: "panic"
+  severity: "critical"
+  pattern: "fatal error: all goroutines are asleep - deadlock!"
+  cause: >
+    All goroutines are blocked — typically waiting to receive from a channel that no
+    one will ever send to, or waiting to send to a channel that no one will ever
+    receive from. This is detected at runtime when no goroutines can make progress.
+  fix_template: |
+    // Wrong: sending to unbuffered channel with no receiver
+    ch := make(chan int)
+    ch <- 42  // deadlock: no goroutine is receiving
+
+    // Fix 1: start receiver in a goroutine
+    ch := make(chan int)
+    go func() {
+        val := <-ch
+        fmt.Println(val)
+    }()
+    ch <- 42
+
+    // Fix 2: use buffered channel if producer/consumer timing is flexible
+    ch := make(chan int, 1)
+    ch <- 42  // doesn't block because buffer has space
+    val := <-ch
+
+    // Fix 3: use select with default for non-blocking send
+    select {
+    case ch <- value:
+        // sent successfully
+    default:
+        // channel full or no receiver — handle gracefully
+        fmt.Println("channel not ready, dropping message")
+    }
+
+    // Common: forgetting to close channel or signal WaitGroup
+    var wg sync.WaitGroup
+    for i := 0; i < 5; i++ {
+        wg.Add(1)
+        go func(n int) {
+            defer wg.Done()  // CRITICAL: always defer Done
+            process(n)
+        }(i)
+    }
+    wg.Wait()
+  tags:
+    - go
+    - goroutine
+    - channel
+    - deadlock
+    - concurrency
+
+- id: "go-closed-001"
+  error_type: "panic"
+  severity: "critical"
+  pattern: "panic: send on closed channel"
+  cause: >
+    A goroutine attempted to send a value to a channel that has already been closed.
+    In Go, only the sender should close a channel, and it should be closed exactly once.
+    This is often caused by multiple goroutines writing to the same channel, or
+    closing a channel and then trying to send to it.
+  fix_template: |
+    // Wrong: sending to closed channel
+    ch := make(chan int)
+    close(ch)
+    ch <- 1  // panic: send on closed channel
+
+    // Wrong: multiple goroutines closing the same channel
+    go func() { close(ch) }()
+    go func() { close(ch) }()  // panic: close of closed channel
+
+    // Fix: only one goroutine closes, use sync.Once
+    var once sync.Once
+    closeChannel := func() {
+        once.Do(func() { close(ch) })
+    }
+
+    // Fix: use done channel pattern
+    done := make(chan struct{})
+
+    go func() {
+        defer close(done)  // only this goroutine closes done
+        for {
+            select {
+            case val := <-input:
+                process(val)
+            case <-done:
+                return
+            }
+        }
+    }()
+
+    // Receiving from closed channel is safe (returns zero value, false)
+    val, ok := <-ch
+    if !ok {
+        fmt.Println("channel closed")
+    }
+  tags:
+    - go
+    - channel
+    - goroutine
+    - close
+    - panic
+
+- id: "go-goroutine-002"
+  error_type: "runtime"
+  severity: "warning"
+  pattern: "goroutine leak|too many goroutines"
+  cause: >
+    Goroutines that were started but never terminated accumulate over time, causing
+    memory growth and eventual process degradation. Common causes: goroutines blocked
+    on channels with no sender/receiver, goroutines waiting for a context that is
+    never cancelled, or goroutines in infinite loops without an exit condition.
+  fix_template: |
+    // Wrong: goroutine with no exit mechanism
+    func startWorker() {
+        go func() {
+            for {
+                doWork()  // runs forever with no way to stop
+            }
+        }()
+    }
+
+    // Fix: use context for cancellation
+    func startWorker(ctx context.Context) {
+        go func() {
+            for {
+                select {
+                case <-ctx.Done():
+                    return  // exit when context is cancelled
+                default:
+                    doWork()
+                }
+            }
+        }()
+    }
+
+    // Callers:
+    ctx, cancel := context.WithCancel(context.Background())
+    startWorker(ctx)
+    // ... later:
+    cancel()  // signals goroutine to stop
+
+    // Detect leaks with goleak in tests:
+    // import "go.uber.org/goleak"
+    func TestSomething(t *testing.T) {
+        defer goleak.VerifyNone(t)  // fails test if goroutines leaked
+        // ... test code
+    }
+  tags:
+    - go
+    - goroutine
+    - leak
+    - context
+    - concurrency

@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "created_at": "2026-02-24",
+  "changelog": "Initial registry release",
+  "categories": {
+    "errors": {
+      "languages": [
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "go",
+        "rust",
+        "csharp"
+      ],
+      "total_entries": 82
+    },
+    "patterns": {
+      "total_files": 14
+    },
+    "adrs": {
+      "total_files": 4
+    },
+    "docs": {
+      "total_files": 7
+    },
+    "behavioral": {
+      "total_files": 8
+    }
+  }
+}

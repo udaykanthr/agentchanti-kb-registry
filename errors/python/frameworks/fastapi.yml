@@ -1,0 +1,224 @@
+- id: "py-fastapi-001"
+  error_type: "RequestValidationError"
+  severity: "warning"
+  pattern: "422 Unprocessable Entity"
+  cause: >
+    FastAPI received a request with a body or query parameters that do not match
+    the declared Pydantic schema. FastAPI automatically validates all request data;
+    validation errors return HTTP 422 with a detailed error body.
+  fix_template: |
+    from fastapi import FastAPI
+    from pydantic import BaseModel, Field, validator
+
+    app = FastAPI()
+
+    class CreateUser(BaseModel):
+        username: str = Field(min_length=3, max_length=50)
+        email: str
+        age: int = Field(ge=0, le=150)
+
+        @validator('email')
+        def email_must_have_at(cls, v):
+            if '@' not in v:
+                raise ValueError('Invalid email address')
+            return v
+
+    # The 422 response body shows exactly which fields failed:
+    # {
+    #   "detail": [
+    #     {"loc": ["body", "age"], "msg": "value is not a valid integer", "type": "type_error.integer"}
+    #   ]
+    # }
+
+    # Always define strict types — FastAPI will reject invalid data before your handler runs
+    @app.post("/users")
+    async def create_user(user: CreateUser):
+        return {"username": user.username}
+  tags:
+    - fastapi
+    - validation
+    - pydantic
+    - http-422
+
+- id: "py-fastapi-002"
+  error_type: "HTTPException"
+  severity: "info"
+  pattern: "fastapi\\.exceptions\\.HTTPException"
+  cause: >
+    An HTTPException was raised to return an HTTP error response to the client.
+    This is intentional FastAPI behavior — raise HTTPException to abort the request
+    with a specific status code and message.
+  fix_template: |
+    from fastapi import FastAPI, HTTPException, status
+
+    app = FastAPI()
+
+    @app.get("/items/{item_id}")
+    async def get_item(item_id: int):
+        item = db.get(item_id)
+
+        # Use HTTPException to return structured error responses
+        if item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Item {item_id} not found"
+            )
+
+        if not item.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item is not available"
+            )
+
+        return item
+
+    # Custom exception handler for consistent error format
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail, "path": str(request.url)}
+        )
+  tags:
+    - fastapi
+    - http
+    - exception
+    - status-code
+
+- id: "py-fastapi-003"
+  error_type: "ResponseValidationError"
+  severity: "warning"
+  pattern: "fastapi\\.exceptions\\.ResponseValidationError"
+  cause: >
+    The value your endpoint returned does not match the declared response_model schema.
+    FastAPI validates outgoing responses when response_model is set. This means your
+    response data has extra or missing fields relative to the schema.
+  fix_template: |
+    from fastapi import FastAPI
+    from pydantic import BaseModel
+
+    app = FastAPI()
+
+    class UserResponse(BaseModel):
+        id: int
+        username: str
+        # Note: password_hash is NOT included here — intentional exclusion
+
+    # Wrong: returning raw ORM model that has extra fields
+    @app.get("/users/{user_id}", response_model=UserResponse)
+    async def get_user(user_id: int):
+        user = db.query(User).get(user_id)
+        return user  # may fail if ORM model has fields not in UserResponse
+
+    # Right: explicitly construct the response model
+    @app.get("/users/{user_id}", response_model=UserResponse)
+    async def get_user(user_id: int):
+        user = db.query(User).get(user_id)
+        return UserResponse(id=user.id, username=user.username)
+
+    # Or use response_model_exclude_unset=True to ignore extra fields
+    @app.get("/users/{user_id}", response_model=UserResponse, response_model_exclude_unset=True)
+    async def get_user(user_id: int):
+        return db.query(User).get(user_id)
+  tags:
+    - fastapi
+    - response
+    - validation
+    - pydantic
+
+- id: "py-fastapi-004"
+  error_type: "WebSocketDisconnect"
+  severity: "info"
+  pattern: "starlette\\.websockets\\.WebSocketDisconnect"
+  cause: >
+    The WebSocket client disconnected unexpectedly. This exception is raised by FastAPI's
+    underlying Starlette layer when the client closes the connection. It must be caught
+    to clean up resources associated with the connection.
+  fix_template: |
+    from fastapi import FastAPI, WebSocket
+    from starlette.websockets import WebSocketDisconnect
+
+    app = FastAPI()
+
+    # Connection manager for tracking active connections
+    class ConnectionManager:
+        def __init__(self):
+            self.active_connections: list[WebSocket] = []
+
+        async def connect(self, ws: WebSocket):
+            await ws.accept()
+            self.active_connections.append(ws)
+
+        def disconnect(self, ws: WebSocket):
+            self.active_connections.remove(ws)
+
+    manager = ConnectionManager()
+
+    @app.websocket("/ws/{client_id}")
+    async def websocket_endpoint(websocket: WebSocket, client_id: str):
+        await manager.connect(websocket)
+        try:
+            while True:
+                data = await websocket.receive_text()
+                await websocket.send_text(f"Echo: {data}")
+        except WebSocketDisconnect:
+            # Always clean up on disconnect
+            manager.disconnect(websocket)
+            print(f"Client {client_id} disconnected")
+  tags:
+    - fastapi
+    - websocket
+    - disconnect
+    - starlette
+
+- id: "py-fastapi-005"
+  error_type: "RuntimeError"
+  severity: "critical"
+  pattern: "Expected the application to be initialized before accessing the database"
+  cause: >
+    FastAPI startup/shutdown lifecycle events were not awaited or set up correctly.
+    Dependencies that require initialization (database connections, async engines) were
+    accessed before the app's on_startup handler ran, or after on_shutdown completed.
+  fix_template: |
+    from fastapi import FastAPI
+    from contextlib import asynccontextmanager
+    from databases import Database
+
+    DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/db"
+    database = Database(DATABASE_URL)
+
+    # Modern approach: use lifespan context manager (FastAPI 0.95+)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup: runs before first request
+        await database.connect()
+        yield
+        # Shutdown: runs after last request
+        await database.disconnect()
+
+    app = FastAPI(lifespan=lifespan)
+
+    # Legacy approach using event handlers (still works)
+    # app = FastAPI()
+    #
+    # @app.on_event("startup")
+    # async def startup():
+    #     await database.connect()
+    #
+    # @app.on_event("shutdown")
+    # async def shutdown():
+    #     await database.disconnect()
+
+    @app.get("/items")
+    async def list_items():
+        # database is connected by this point
+        return await database.fetch_all("SELECT * FROM items")
+  tags:
+    - fastapi
+    - lifecycle
+    - startup
+    - shutdown
+    - database

@@ -1,0 +1,245 @@
+- id: "js-type-001"
+  error_type: "TypeError"
+  severity: "warning"
+  pattern: "Cannot read propert(?:y|ies) of (undefined|null)"
+  cause: >
+    You are attempting to access a property on a value that is undefined or null.
+    This is one of the most common JavaScript errors. Causes include: API responses
+    not being what you expected, async data not loaded yet, accessing deeply nested
+    properties without null checks, or a variable not being initialized.
+  fix_template: |
+    // Wrong:
+    const name = user.profile.name;  // TypeError if user or user.profile is null/undefined
+
+    // Right option 1: optional chaining (?.) — returns undefined instead of throwing
+    const name = user?.profile?.name;
+
+    // Right option 2: nullish coalescing with optional chaining
+    const name = user?.profile?.name ?? 'Anonymous';
+
+    // Right option 3: explicit null check
+    if (user && user.profile) {
+      const name = user.profile.name;
+    }
+
+    // Right option 4: destructuring with defaults
+    const { profile: { name = 'Anonymous' } = {} } = user ?? {};
+
+    // Common async mistake: data not loaded yet
+    const [data, setData] = useState(null);  // starts as null
+    // Wrong: data.items will throw on first render
+    return <ul>{data.items.map(i => <li>{i}</li>)}</ul>;
+    // Right: guard with loading check
+    if (!data) return <p>Loading...</p>;
+    return <ul>{data.items.map(i => <li>{i}</li>)}</ul>;
+  tags:
+    - type
+    - null
+    - undefined
+    - optional-chaining
+
+- id: "js-ref-001"
+  error_type: "ReferenceError"
+  severity: "warning"
+  pattern: "(.+) is not defined"
+  cause: >
+    A variable, function, or class is referenced before it is declared, or it was
+    declared with let/const and accessed before its declaration (temporal dead zone),
+    or a name is referenced that doesn't exist in any accessible scope.
+  fix_template: |
+    // Wrong: using let/const before declaration (temporal dead zone)
+    console.log(myVar);  // ReferenceError
+    let myVar = 5;
+
+    // Right: declare before use
+    let myVar = 5;
+    console.log(myVar);
+
+    // Note: var is hoisted (but undefined, not ReferenceError)
+    console.log(myVar);  // undefined (not error)
+    var myVar = 5;
+
+    // Wrong: typo in variable name
+    const userName = "Alice";
+    console.log(username);  // ReferenceError: username is not defined
+
+    // Wrong: accessing browser globals in Node.js
+    const el = document.getElementById('app');  // ReferenceError in Node.js
+
+    // Right: check environment before using globals
+    if (typeof document !== 'undefined') {
+      const el = document.getElementById('app');
+    }
+  tags:
+    - reference
+    - scope
+    - temporal-dead-zone
+    - hoisting
+
+- id: "js-range-001"
+  error_type: "RangeError"
+  severity: "warning"
+  pattern: "Maximum call stack size exceeded"
+  cause: >
+    Infinite or excessively deep recursion has exhausted the call stack. This is
+    the JavaScript equivalent of a Python RecursionError. A function is calling
+    itself without a proper base case, or two functions are calling each other
+    infinitely.
+  fix_template: |
+    // Wrong: infinite recursion
+    function sum(n) {
+      return n + sum(n - 1);  // no base case
+    }
+
+    // Right: add base case
+    function sum(n) {
+      if (n <= 0) return 0;
+      return n + sum(n - 1);
+    }
+
+    // Right: use iteration for large values (avoids stack limit)
+    function sumIterative(n) {
+      let total = 0;
+      for (let i = 1; i <= n; i++) total += i;
+      return total;
+    }
+
+    // Right: use tail-call-optimized style (theoretical in JS, use iteration)
+    // For deeply recursive tree traversal, use explicit stack:
+    function traverseTree(node) {
+      const stack = [node];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        process(current);
+        if (current.right) stack.push(current.right);
+        if (current.left) stack.push(current.left);
+      }
+    }
+  tags:
+    - range
+    - recursion
+    - call-stack
+
+- id: "js-promise-001"
+  error_type: "UnhandledPromiseRejection"
+  severity: "critical"
+  pattern: "UnhandledPromiseRejection|UnhandledPromiseRejectionWarning"
+  cause: >
+    A Promise was rejected but no .catch() handler or try/catch block around
+    await was present to handle the rejection. In Node.js 15+, this crashes the
+    process. In browsers, it shows a console warning and may crash the tab.
+  fix_template: |
+    // Wrong: no error handling
+    fetchUser(id)
+      .then(user => processUser(user));
+    // If fetchUser rejects, the error is unhandled
+
+    // Right option 1: add .catch()
+    fetchUser(id)
+      .then(user => processUser(user))
+      .catch(err => {
+        console.error('Failed to fetch user:', err);
+        // handle error: show UI, retry, etc.
+      });
+
+    // Right option 2: async/await with try/catch
+    async function loadUser(id) {
+      try {
+        const user = await fetchUser(id);
+        processUser(user);
+      } catch (err) {
+        console.error('Failed to fetch user:', err);
+      }
+    }
+
+    // Global handler for uncaught rejections (Node.js — last resort, not a substitute)
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled rejection at:', promise, 'reason:', reason);
+      // Optionally: graceful shutdown
+    });
+  tags:
+    - promise
+    - async
+    - rejection
+    - error-handling
+
+- id: "js-type-002"
+  error_type: "TypeError"
+  severity: "warning"
+  pattern: "(.+) is not a function"
+  cause: >
+    You are attempting to call something that is not a function. Common causes:
+    the variable holds null/undefined (async data not loaded), a method was accessed
+    incorrectly (parentheses missing or wrong object), the function name has a typo,
+    or the import is incorrect.
+  fix_template: |
+    // Wrong: calling a property that is not a function
+    const result = obj.value();  // TypeError if obj.value is a number/string
+
+    // Wrong: calling undefined (not yet loaded async data)
+    const handler = config.onSuccess;
+    handler();  // TypeError if onSuccess is undefined
+
+    // Right: check before calling
+    if (typeof handler === 'function') {
+      handler();
+    }
+
+    // Wrong: incorrect method name
+    const arr = [1, 2, 3];
+    arr.foreach(x => console.log(x));  // TypeError: foreach is not a function
+
+    // Right:
+    arr.forEach(x => console.log(x));  // note: capital E
+
+    // Wrong: forgetting to import a named export
+    import myFunction from './utils';  // if myFunction is a named export, not default
+    myFunction();  // TypeError: myFunction is not a function
+
+    // Right:
+    import { myFunction } from './utils';
+  tags:
+    - type
+    - function
+    - undefined
+    - import
+
+- id: "js-syntax-001"
+  error_type: "SyntaxError"
+  severity: "critical"
+  pattern: "Unexpected token (.+)|Unexpected end of input"
+  cause: >
+    The JavaScript parser encountered code it cannot parse. This is a parse-time error,
+    not a runtime error — the entire script fails to execute. Common causes: missing
+    closing brackets/braces, invalid JSON passed to JSON.parse(), using newer syntax
+    without transpilation, or template literal not closed.
+  fix_template: |
+    // Wrong: missing closing brace
+    function greet(name) {
+      if (name) {
+        return `Hello, ${name}`;
+      }
+    // missing closing brace for function — SyntaxError
+
+    // Wrong: invalid JSON string
+    const data = JSON.parse("{ name: 'John' }");  // SyntaxError: JSON requires double quotes
+    // Right:
+    const data = JSON.parse('{ "name": "John" }');
+
+    // Wrong: using optional chaining in older Node.js without transpilation
+    const val = obj?.nested?.prop;  // SyntaxError in Node.js < 14
+
+    // Right: ensure your Node.js/browser supports the syntax, or use Babel
+
+    // Wrong: async/await in non-async context misuse
+    // If you see "Unexpected token 'await'" — you're using await outside an async function
+    const result = await fetchData();  // SyntaxError at top level (without module type)
+    // Right: wrap in async function or use top-level await in ES modules
+    async function run() {
+      const result = await fetchData();
+    }
+  tags:
+    - syntax
+    - parse
+    - json
+    - template-literal
