@@ -1,0 +1,399 @@
+- id: "py-attr-001"
+  error_type: "AttributeError"
+  severity: "warning"
+  pattern: "'(.+)' object has no attribute '(.+)'"
+  cause: >
+    The object does not have the attribute you are trying to access. This is often caused
+    by a typo in the attribute name, accessing an attribute that belongs to a different
+    class, or the attribute being defined only in a subclass.
+  fix_template: |
+    # Check if the attribute exists before accessing it
+    if hasattr(obj, 'attribute_name'):
+        value = obj.attribute_name
+
+    # Use getattr with a default to avoid the error
+    value = getattr(obj, 'attribute_name', default_value)
+
+    # Common mistake: calling a method instead of accessing a property
+    # Wrong:
+    result = obj.method  # forgot parentheses
+    # Right:
+    result = obj.method()
+  tags:
+    - attribute
+    - runtime
+    - typo
+  related_errors:
+    - py-name-001
+
+- id: "py-type-001"
+  error_type: "TypeError"
+  severity: "warning"
+  pattern: "unsupported operand type\\(s\\) for (.+): '(.+)' and '(.+)'"
+  cause: >
+    You are applying an operator (like +, -, *, /) to incompatible types.
+    The most common case is mixing str and int without explicit conversion.
+  fix_template: |
+    # Wrong:
+    result = "Count: " + 5  # raises TypeError
+
+    # Right: explicitly convert to str
+    result = "Count: " + str(5)
+
+    # Or use f-string (preferred):
+    result = f"Count: {5}"
+
+    # For numeric operations, ensure both sides are numbers:
+    x = int(user_input)  # convert string from input() to int first
+    total = x + 10
+  tags:
+    - type
+    - operator
+    - runtime
+
+- id: "py-type-002"
+  error_type: "TypeError"
+  severity: "warning"
+  pattern: "'(.+)' object is not (iterable|subscriptable|callable)"
+  cause: >
+    You are attempting to iterate, index, or call an object that does not support that
+    operation. Common cases: iterating over None (a function that returns None by default),
+    indexing an integer, or calling a non-callable variable.
+  fix_template: |
+    # Object is not iterable: function returned None
+    # Wrong:
+    results = process_items()   # function has no return statement → returns None
+    for item in results:        # TypeError: 'NoneType' object is not iterable
+        pass
+
+    # Right: ensure function returns a list
+    def process_items():
+        return [...]  # explicit return
+
+    # Object is not subscriptable: trying to index a non-sequence
+    # Wrong:
+    count = 42
+    first = count[0]  # TypeError
+
+    # Right: use the correct type
+    items = [42]
+    first = items[0]
+  tags:
+    - type
+    - iterable
+    - callable
+    - runtime
+
+- id: "py-key-001"
+  error_type: "KeyError"
+  severity: "warning"
+  pattern: "KeyError: (.+)"
+  cause: >
+    The key does not exist in the dictionary. This is typically caused by a typo in the
+    key name, data that varies in structure, or accessing keys from an empty dict.
+  fix_template: |
+    # Wrong:
+    value = my_dict['missing_key']  # raises KeyError if key absent
+
+    # Right option 1: use .get() with a default
+    value = my_dict.get('missing_key', default_value)
+
+    # Right option 2: check before access
+    if 'missing_key' in my_dict:
+        value = my_dict['missing_key']
+
+    # Right option 3: use collections.defaultdict
+    from collections import defaultdict
+    my_dict = defaultdict(list)
+    my_dict['new_key'].append(item)  # auto-initializes
+
+    # Right option 4: handle explicitly
+    try:
+        value = my_dict['key']
+    except KeyError:
+        value = default_value
+  tags:
+    - key
+    - dict
+    - runtime
+
+- id: "py-import-001"
+  error_type: "ImportError"
+  severity: "warning"
+  pattern: "cannot import name '(.+)' from '(.+)'"
+  cause: >
+    The name you are importing does not exist in the specified module. This is usually
+    caused by a typo, importing from the wrong module, or the name being moved or
+    renamed in a newer version of the library.
+  fix_template: |
+    # Wrong:
+    from collections import OrderedDict, MutableMapping  # MutableMapping moved in 3.10+
+
+    # Right (Python 3.10+):
+    from collections.abc import MutableMapping
+    from collections import OrderedDict
+
+    # Debugging: check what is actually available in the module
+    import module_name
+    print(dir(module_name))
+
+    # Use importlib to check if a module exists
+    import importlib
+    spec = importlib.util.find_spec('module_name')
+    print(spec)  # None if not installed
+  tags:
+    - import
+    - module
+    - version
+
+- id: "py-import-002"
+  error_type: "ModuleNotFoundError"
+  severity: "warning"
+  pattern: "No module named '(.+)'"
+  cause: >
+    The module is not installed in the current Python environment, or the virtual
+    environment is not activated. ModuleNotFoundError is a subclass of ImportError.
+  fix_template: |
+    # Install the missing package
+    pip install package_name
+
+    # Or with a specific version
+    pip install package_name==2.1.0
+
+    # If using a virtual environment, ensure it's activated:
+    source .venv/bin/activate   # Linux/macOS
+    .venv\Scripts\activate      # Windows
+
+    # Check which Python is being used
+    which python  # should point to venv Python
+    python -m pip list  # list installed packages
+
+    # For local packages, add to sys.path or install in dev mode:
+    pip install -e .
+  tags:
+    - import
+    - install
+    - environment
+
+- id: "py-recursion-001"
+  error_type: "RecursionError"
+  severity: "critical"
+  pattern: "maximum recursion depth exceeded"
+  cause: >
+    The function is calling itself (directly or indirectly) too many times without
+    reaching a base case. Python's default recursion limit is 1000. This is almost
+    always a logic error — a missing or incorrect base case, or infinite mutual recursion.
+  fix_template: |
+    # Wrong: missing base case
+    def factorial(n):
+        return n * factorial(n - 1)  # never stops
+
+    # Right: add base case
+    def factorial(n):
+        if n <= 1:
+            return 1
+        return n * factorial(n - 1)
+
+    # For legitimately deep recursion, convert to iterative:
+    def factorial_iter(n):
+        result = 1
+        for i in range(2, n + 1):
+            result *= i
+        return result
+
+    # Or increase the limit (use with caution):
+    import sys
+    sys.setrecursionlimit(5000)
+  tags:
+    - recursion
+    - stack
+    - critical
+    - base-case
+
+- id: "py-value-001"
+  error_type: "ValueError"
+  severity: "warning"
+  pattern: "invalid literal for int\\(\\) with base (\\d+): '(.+)'"
+  cause: >
+    You are attempting to convert a string to an integer, but the string does not
+    represent a valid integer. This commonly happens when parsing user input or
+    reading data from files/APIs.
+  fix_template: |
+    # Wrong:
+    n = int("abc")   # ValueError
+    n = int("3.14")  # ValueError (use float first)
+
+    # Right: validate before converting
+    user_input = "42"
+    if user_input.isdigit():
+        n = int(user_input)
+    else:
+        print("Not a valid integer")
+
+    # Right: use try/except for robust parsing
+    try:
+        n = int(user_input)
+    except ValueError:
+        n = 0  # or raise a user-friendly error
+
+    # For floats that need to be ints:
+    n = int(float("3.14"))  # n = 3
+  tags:
+    - value
+    - parsing
+    - type-conversion
+
+- id: "py-index-001"
+  error_type: "IndexError"
+  severity: "warning"
+  pattern: "list index out of range"
+  cause: >
+    You are accessing a list with an index that is outside the valid range (0 to len-1,
+    or negative indices from -len to -1). This often happens when assuming a fixed list
+    length, off-by-one errors, or iterating while modifying the list.
+  fix_template: |
+    # Wrong:
+    items = [1, 2, 3]
+    x = items[5]  # IndexError: list index out of range
+
+    # Right: check bounds first
+    if len(items) > 5:
+        x = items[5]
+
+    # Or use get with a default via try/except
+    try:
+        x = items[5]
+    except IndexError:
+        x = None
+
+    # Common off-by-one:
+    for i in range(len(items) + 1):  # bug: goes 1 too far
+        print(items[i])
+
+    # Right:
+    for i in range(len(items)):
+        print(items[i])
+    # Even better: iterate directly
+    for item in items:
+        print(item)
+  tags:
+    - index
+    - list
+    - bounds
+
+- id: "py-name-001"
+  error_type: "NameError"
+  severity: "warning"
+  pattern: "name '(.+)' is not defined"
+  cause: >
+    The variable or function name used has not been defined in the current scope. This is
+    caused by typos, using a variable before assigning it, or referencing a variable
+    from the wrong scope (e.g., local vs global).
+  fix_template: |
+    # Cause 1: typo
+    mesage = "hello"
+    print(message)  # NameError: name 'message' is not defined
+    # Fix: correct the typo
+
+    # Cause 2: used before assignment
+    print(x)  # NameError
+    x = 10    # defined too late
+
+    # Fix: define before use
+    x = 10
+    print(x)
+
+    # Cause 3: scope issue
+    def set_value():
+        result = 42  # local scope
+
+    set_value()
+    print(result)  # NameError — result is local to the function
+
+    # Fix: return the value or use a class/module-level variable
+    def set_value():
+        return 42
+
+    result = set_value()
+    print(result)
+  tags:
+    - name
+    - scope
+    - runtime
+
+- id: "py-stop-001"
+  error_type: "StopIteration"
+  severity: "info"
+  pattern: "StopIteration"
+  cause: >
+    Raised when next() is called on an iterator that has been exhausted. When raised
+    inside a generator function, it causes the generator to silently stop (Python 3.7+
+    converts it to RuntimeError inside generators).
+  fix_template: |
+    # Wrong: calling next() without checking exhaustion
+    gen = iter([1, 2, 3])
+    while True:
+        item = next(gen)  # raises StopIteration when done
+
+    # Right: provide a default value
+    item = next(gen, None)  # returns None when exhausted
+    while item is not None:
+        process(item)
+        item = next(gen, None)
+
+    # Or better: just use a for loop
+    for item in gen:
+        process(item)
+
+    # Inside a generator: do not raise StopIteration explicitly (Python 3.7+)
+    # Wrong:
+    def my_gen():
+        raise StopIteration  # becomes RuntimeError in 3.7+
+
+    # Right: just return
+    def my_gen():
+        yield 1
+        return  # stops iteration cleanly
+  tags:
+    - iterator
+    - generator
+    - stop
+
+- id: "py-runtime-001"
+  error_type: "RuntimeError"
+  severity: "critical"
+  pattern: "This event loop is already running"
+  cause: >
+    You are calling asyncio.run() or loop.run_until_complete() from within an already
+    running event loop. This is common in Jupyter notebooks (which run their own loop)
+    or when mixing async frameworks.
+  fix_template: |
+    # Context: already inside a running event loop (e.g., Jupyter)
+    # Wrong:
+    asyncio.run(my_coroutine())  # RuntimeError: This event loop is already running
+
+    # Fix 1: use nest_asyncio (Jupyter/IPython)
+    import nest_asyncio
+    nest_asyncio.apply()
+    asyncio.run(my_coroutine())
+
+    # Fix 2: use await directly (if you're already in async context)
+    result = await my_coroutine()
+
+    # Fix 3: get the running loop and create a task
+    import asyncio
+    loop = asyncio.get_event_loop()
+    task = loop.create_task(my_coroutine())
+
+    # Fix 4: restructure to not mix sync and async entry points
+    async def main():
+        result = await my_coroutine()
+        return result
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+  tags:
+    - asyncio
+    - event-loop
+    - runtime
+    - jupyter

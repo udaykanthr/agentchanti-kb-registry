@@ -1,0 +1,223 @@
+- id: "rs-borrow-001"
+  error_type: "E0502"
+  severity: "critical"
+  pattern: "cannot borrow `(.+)` as (mutable|immutable) because it is also borrowed as (mutable|immutable)"
+  cause: >
+    Rust's borrow checker enforces that at any given time, you can have either one
+    mutable reference OR any number of immutable references, but not both. This prevents
+    data races at compile time. E0502 occurs when you try to create a mutable reference
+    while immutable references exist, or vice versa.
+  fix_template: |
+    // Wrong: immutable borrow while mutable borrow exists
+    let mut v = vec![1, 2, 3];
+    let first = &v[0];       // immutable borrow of v
+    v.push(4);               // E0502: mutable borrow while immutable exists
+    println!("{}", first);   // first might be dangling if push reallocated
+
+    // Fix 1: let the immutable borrow end before mutating
+    let mut v = vec![1, 2, 3];
+    {
+        let first = &v[0];
+        println!("{}", first);
+    }  // first's borrow ends here
+    v.push(4);  // now safe
+
+    // Fix 2: copy the value instead of borrowing
+    let mut v = vec![1, 2, 3];
+    let first = v[0];  // copies the value (i32 implements Copy)
+    v.push(4);
+    println!("{}", first);  // uses copied value, not reference
+
+    // Fix 3: use indices instead of references when mutating
+    let mut v = vec![1, 2, 3];
+    let first_idx = 0;
+    v.push(4);
+    println!("{}", v[first_idx]);  // index into v after mutation
+  tags:
+    - rust
+    - borrow-checker
+    - ownership
+    - mutability
+    - e0502
+
+- id: "rs-lifetime-001"
+  error_type: "E0106"
+  severity: "critical"
+  pattern: "missing lifetime specifier|lifetime '(.+)' required"
+  cause: >
+    Rust requires explicit lifetime annotations when the compiler cannot infer how
+    long references in function signatures or structs should live. This is needed when
+    a function takes multiple references as parameters and returns a reference, or when
+    a struct holds references.
+  fix_template: |
+    // Wrong: compiler can't determine which input lifetime the output reference has
+    fn longest(x: &str, y: &str) -> &str {  // E0106: missing lifetime
+        if x.len() > y.len() { x } else { y }
+    }
+
+    // Fix: add lifetime annotation
+    fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {
+        if x.len() > y.len() { x } else { y }
+    }
+    // 'a means: the returned reference lives as long as the shorter of x and y
+
+    // Wrong: struct holding a reference without lifetime
+    struct Excerpt {
+        part: &str,  // E0106: missing lifetime
+    }
+
+    // Fix: add lifetime to struct
+    struct Excerpt<'a> {
+        part: &'a str,  // part lives at least as long as Excerpt
+    }
+
+    // Lifetime elision rules (no annotation needed in these cases):
+    // 1. Each reference parameter gets its own lifetime
+    // 2. If exactly one reference input, output gets that lifetime
+    // 3. If &self or &mut self, output gets self's lifetime
+    fn first_word(s: &str) -> &str {  // elision applies: no annotation needed
+        let bytes = s.as_bytes();
+        for (i, &byte) in bytes.iter().enumerate() {
+            if byte == b' ' { return &s[0..i]; }
+        }
+        &s[..]
+    }
+  tags:
+    - rust
+    - lifetime
+    - borrow-checker
+    - e0106
+
+- id: "rs-unwrap-001"
+  error_type: "panic"
+  severity: "warning"
+  pattern: "called `Option::unwrap\\(\\)` on a `None` value|called `Result::unwrap\\(\\)` on an `Err` value"
+  cause: >
+    unwrap() was called on an Option::None or Result::Err, causing a panic. unwrap()
+    is only safe when you are certain the value is Some or Ok. In production code,
+    always handle None/Err explicitly.
+  fix_template: |
+    // Wrong: unwrap on potentially None
+    let user: Option<User> = find_user(id);
+    let name = user.unwrap().name;  // panics if find_user returns None
+
+    // Fix 1: use match to handle both cases
+    let name = match user {
+        Some(u) => u.name,
+        None => String::from("Unknown"),
+    };
+
+    // Fix 2: use map, unwrap_or, unwrap_or_else
+    let name = user.map(|u| u.name).unwrap_or_else(|| "Unknown".to_string());
+
+    // Fix 3: use ? operator to propagate errors (inside a function returning Result)
+    fn get_name(id: u32) -> Result<String, AppError> {
+        let user = find_user(id).ok_or(AppError::UserNotFound(id))?;
+        Ok(user.name)
+    }
+
+    // Fix 4: use expect() with a descriptive message (still panics, but better message)
+    // Only use in tests or situations where the error is truly unrecoverable
+    let config = load_config().expect("Config file must exist at startup");
+
+    // For Result<T, E>:
+    let content = std::fs::read_to_string("file.txt")?;  // propagate with ?
+    // or
+    let content = std::fs::read_to_string("file.txt")
+        .unwrap_or_else(|e| { eprintln!("Error: {e}"); String::new() });
+  tags:
+    - rust
+    - unwrap
+    - option
+    - result
+    - panic
+    - error-handling
+
+- id: "rs-overflow-001"
+  error_type: "panic"
+  severity: "warning"
+  pattern: "attempt to (add|subtract|multiply) with overflow"
+  cause: >
+    Integer arithmetic overflowed in debug mode. Rust panics on integer overflow in
+    debug builds (as a safety check) but silently wraps in release builds. This is
+    a common source of bugs if you rely on release behavior without testing in debug.
+  fix_template: |
+    // Wrong: can overflow for large values
+    let a: u8 = 200;
+    let b: u8 = 100;
+    let c = a + b;  // panics in debug: 300 overflows u8 (max 255)
+
+    // Fix 1: use checked arithmetic (returns Option)
+    let c = a.checked_add(b).expect("addition overflowed");
+    // Or handle None:
+    let c = a.checked_add(b).unwrap_or(u8::MAX);
+
+    // Fix 2: use saturating arithmetic (clamps to min/max)
+    let c = a.saturating_add(b);  // returns 255 for u8 instead of overflowing
+
+    // Fix 3: use wrapping arithmetic (wraps around, explicit and documented)
+    let c = a.wrapping_add(b);  // always wraps — intentional
+
+    // Fix 4: use a larger type
+    let a: u32 = 200;
+    let b: u32 = 100;
+    let c: u32 = a + b;  // 300 fits in u32
+
+    // Summary of overflow-safe methods:
+    // .checked_*()   → Option<T>, None on overflow
+    // .saturating_*() → T, clamps at min/max
+    // .wrapping_*()  → T, wraps around
+    // .overflowing_*() → (T, bool), returns result + overflow flag
+  tags:
+    - rust
+    - arithmetic
+    - overflow
+    - integer
+    - panic
+
+- id: "rs-trait-001"
+  error_type: "E0277"
+  severity: "warning"
+  pattern: "the trait bound `(.+): (.+)` is not satisfied"
+  cause: >
+    A type is being used where a specific trait implementation is required, but the
+    type does not implement that trait. Common in generic functions, trait objects,
+    and standard library operations like printing, cloning, or comparing.
+  fix_template: |
+    // Wrong: using println! on a type that doesn't implement Display
+    struct Point { x: f64, y: f64 }
+    let p = Point { x: 1.0, y: 2.0 };
+    println!("{}", p);  // E0277: Point doesn't implement std::fmt::Display
+
+    // Fix 1: implement the required trait
+    use std::fmt;
+    impl fmt::Display for Point {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "({}, {})", self.x, self.y)
+        }
+    }
+
+    // Fix 2: use Debug derive for quick printing
+    #[derive(Debug)]
+    struct Point { x: f64, y: f64 }
+    println!("{:?}", p);  // uses Debug
+    println!("{:#?}", p); // pretty-printed Debug
+
+    // Fix 3: derive common traits
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    struct MyType { ... }
+
+    // Wrong: using a type in a HashMap that doesn't implement Hash + Eq
+    use std::collections::HashMap;
+    struct Key { id: u32 }
+    let mut map: HashMap<Key, String> = HashMap::new();  // E0277: Key doesn't implement Hash
+
+    // Fix: derive or implement Hash and Eq
+    #[derive(Hash, Eq, PartialEq)]
+    struct Key { id: u32 }
+  tags:
+    - rust
+    - trait
+    - e0277
+    - generics
+    - impl

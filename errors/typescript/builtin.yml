@@ -1,0 +1,243 @@
+- id: "ts-ts2345-001"
+  error_type: "TS2345"
+  severity: "warning"
+  pattern: "TS2345.*Argument of type '(.+)' is not assignable to parameter of type '(.+)'"
+  cause: >
+    A value passed to a function does not match the expected parameter type. This is
+    TypeScript's fundamental type safety check. Common causes: passing a more general
+    type where a specific one is expected (string when literal type needed), passing
+    null/undefined when the parameter is not optional, or incorrect type widening.
+  fix_template: |
+    // Wrong: passing string when literal union type expected
+    function setDirection(dir: 'left' | 'right' | 'up' | 'down') {}
+    const dir = 'left';  // TypeScript infers type as string, not the literal
+    setDirection(dir);   // TS2345: string not assignable to 'left' | 'right' | ...
+
+    // Fix 1: use const assertion
+    const dir = 'left' as const;  // type is literal 'left'
+    setDirection(dir);
+
+    // Fix 2: explicitly annotate the variable
+    const dir: 'left' | 'right' | 'up' | 'down' = 'left';
+
+    // Wrong: passing possibly-null value
+    function greet(name: string) { return `Hello, ${name}`; }
+    const name: string | null = getName();  // possibly null
+    greet(name);  // TS2345: string | null not assignable to string
+
+    // Fix: narrow the type before passing
+    if (name !== null) {
+      greet(name);  // TypeScript knows name is string here
+    }
+    // Or: provide fallback
+    greet(name ?? 'Guest');
+  tags:
+    - typescript
+    - type-safety
+    - ts2345
+    - argument
+
+- id: "ts-ts2339-001"
+  error_type: "TS2339"
+  severity: "warning"
+  pattern: "TS2339.*Property '(.+)' does not exist on type '(.+)'"
+  cause: >
+    You are accessing a property on an object that TypeScript's type system does not
+    know about. This happens when working with loosely typed data (any, unknown),
+    accessing properties that exist only on some union members, or typos in property names.
+  fix_template: |
+    // Wrong: accessing property not in type definition
+    interface User { id: number; name: string; }
+    const user: User = { id: 1, name: "Alice" };
+    console.log(user.email);  // TS2339: 'email' does not exist on type 'User'
+
+    // Fix 1: add the property to the interface
+    interface User { id: number; name: string; email?: string; }
+
+    // Fix 2: use type assertion (only when you're certain the data has this property)
+    const email = (user as any).email;  // escape hatch — use sparingly
+
+    // Wrong: accessing property on union type
+    type Shape = { kind: 'circle'; radius: number } | { kind: 'rect'; width: number };
+    function area(shape: Shape) {
+      return shape.radius;  // TS2339: 'radius' may not exist (not on 'rect')
+    }
+
+    // Fix: narrow the union with discriminant
+    function area(shape: Shape) {
+      if (shape.kind === 'circle') {
+        return Math.PI * shape.radius ** 2;  // TypeScript knows it's a circle here
+      }
+      return shape.width * shape.width;
+    }
+  tags:
+    - typescript
+    - ts2339
+    - property
+    - type-safety
+
+- id: "ts-ts2304-001"
+  error_type: "TS2304"
+  severity: "warning"
+  pattern: "TS2304.*Cannot find name '(.+)'"
+  cause: >
+    TypeScript cannot find a declaration for the name being used. This is the TypeScript
+    equivalent of a JavaScript ReferenceError, but caught at compile time. Common causes:
+    missing type definitions (@types/ packages), using globals without the right lib
+    configuration, or a namespace/module not being imported.
+  fix_template: |
+    // Error: Cannot find name 'fetch'
+    // Fix: add "lib": ["DOM"] or "DOM.Iterable" to tsconfig.json
+    // tsconfig.json:
+    // { "compilerOptions": { "lib": ["ES2020", "DOM"] } }
+
+    // Error: Cannot find name 'process' (in Node.js projects)
+    // Fix: install @types/node
+    npm install --save-dev @types/node
+    // tsconfig.json: "types": ["node"]
+
+    // Error: Cannot find name 'describe' or 'it' (in test files)
+    npm install --save-dev @types/jest
+    // or @types/mocha depending on your test framework
+
+    // Error: Cannot find name 'React'
+    // Fix: ensure React is imported (pre React 17) or use jsxImportSource
+    import React from 'react';
+    // Or in tsconfig.json: "jsx": "react-jsx" (React 17+, no import needed)
+
+    // Error: Cannot find module './types' or its corresponding type declarations
+    // Fix: create a types.ts or types.d.ts file
+    // Or add allowJs: true and checkJs: true for JS files
+  tags:
+    - typescript
+    - ts2304
+    - types
+    - declarations
+    - tsconfig
+
+- id: "ts-ts2322-001"
+  error_type: "TS2322"
+  severity: "warning"
+  pattern: "TS2322.*Type '(.+)' is not assignable to type '(.+)'"
+  cause: >
+    A value being assigned to a variable or returned from a function does not match
+    the declared type. Similar to TS2345 but for assignments rather than function
+    arguments. Often caused by functions returning the wrong type, or missing fields
+    in object literals.
+  fix_template: |
+    // Wrong: missing required field in object literal
+    interface Config { host: string; port: number; timeout: number; }
+    const config: Config = { host: 'localhost', port: 3000 };
+    // TS2322: Property 'timeout' is missing
+
+    // Fix: add all required fields
+    const config: Config = { host: 'localhost', port: 3000, timeout: 5000 };
+    // Or make the field optional in the interface: timeout?: number
+
+    // Wrong: function return type mismatch
+    function getUser(): User {
+      return null;  // TS2322: null not assignable to User
+    }
+
+    // Fix 1: update return type to allow null
+    function getUser(): User | null {
+      return null;
+    }
+
+    // Fix 2: never return null
+    function getUser(): User {
+      return { id: 0, name: 'Default' };
+    }
+
+    // Wrong: async function returning wrong type
+    async function fetchData(): Promise<string> {
+      return 42;  // TS2322: number not assignable to string
+    }
+
+    // Fix:
+    async function fetchData(): Promise<string> {
+      return String(42);
+    }
+  tags:
+    - typescript
+    - ts2322
+    - assignment
+    - type-safety
+
+- id: "ts-ts7006-001"
+  error_type: "TS7006"
+  severity: "info"
+  pattern: "TS7006.*Parameter '(.+)' implicitly has an 'any' type"
+  cause: >
+    TypeScript's strict mode (or noImplicitAny) is enabled and a function parameter
+    has no type annotation, so TypeScript cannot infer its type. It implicitly becomes
+    any, which defeats type safety.
+  fix_template: |
+    // Wrong (strict mode):
+    function greet(name) {  // TS7006: Parameter 'name' implicitly has 'any' type
+      return `Hello, ${name}`;
+    }
+
+    // Fix: add explicit type annotation
+    function greet(name: string): string {
+      return `Hello, ${name}`;
+    }
+
+    // Wrong: callback without type
+    const numbers = [1, 2, 3];
+    const doubled = numbers.map(n => n * 2);  // TypeScript infers 'n: number' from array type — OK
+    const results = [].map(item => item.value);  // TS7006: empty array, type unknown
+
+    // Fix: annotate the empty array
+    const results = ([] as Item[]).map(item => item.value);
+
+    // When any is genuinely needed, be explicit:
+    function parseJSON(raw: string): unknown {
+      return JSON.parse(raw);  // unknown is safer than any
+    }
+  tags:
+    - typescript
+    - ts7006
+    - any
+    - strict
+    - implicit-any
+
+- id: "ts-ts2531-001"
+  error_type: "TS2531"
+  severity: "warning"
+  pattern: "TS2531.*Object is possibly 'null'"
+  cause: >
+    Strict null checks are enabled (strictNullChecks: true) and you are accessing a
+    property or method on a value that TypeScript knows could be null. This is a
+    compile-time safety check that prevents null pointer dereferences at runtime.
+  fix_template: |
+    // Wrong:
+    const el = document.getElementById('app');
+    el.addEventListener('click', handler);  // TS2531: el is possibly null
+
+    // Fix 1: null check
+    const el = document.getElementById('app');
+    if (el !== null) {
+      el.addEventListener('click', handler);
+    }
+
+    // Fix 2: non-null assertion (!) — use only when you are 100% certain
+    const el = document.getElementById('app')!;  // assert it's not null
+    el.addEventListener('click', handler);
+
+    // Fix 3: optional chaining — silently does nothing if null
+    const el = document.getElementById('app');
+    el?.addEventListener('click', handler);
+
+    // Fix 4: throw if null (fail fast)
+    const el = document.getElementById('app');
+    if (!el) throw new Error('Element #app not found in DOM');
+    el.addEventListener('click', handler);
+
+    // Tip: prefer null checks or optional chaining over non-null assertion (!)
+    // The ! suppresses the error but does not prevent runtime crashes
+  tags:
+    - typescript
+    - ts2531
+    - null
+    - strict-null-checks

@@ -1,0 +1,261 @@
+- id: "java-spring-001"
+  error_type: "NoSuchBeanDefinitionException"
+  severity: "critical"
+  pattern: "org\\.springframework\\.beans\\.factory\\.NoSuchBeanDefinitionException: No qualifying bean of type '(.+)'"
+  cause: >
+    Spring cannot find a bean in its application context matching the requested type or name.
+    Common causes: the class is not annotated with @Component/@Service/@Repository/@Controller,
+    the component scan does not include the package, or there are multiple beans of the
+    same type without @Qualifier.
+  fix_template: |
+    // Wrong: class not annotated
+    public class UserService {  // Spring doesn't know about this
+        // ...
+    }
+
+    // Right: add stereotype annotation
+    @Service  // or @Component, @Repository depending on role
+    public class UserService {
+        // ...
+    }
+
+    // Wrong: UserService is outside the component scan base package
+    // If your main app is at com.example.app.Application,
+    // Spring scans com.example.app.** by default.
+    // UserService at com.other.UserService won't be found.
+
+    // Fix: move to correct package OR add explicit scan
+    @SpringBootApplication
+    @ComponentScan(basePackages = {"com.example.app", "com.other"})
+    public class Application { ... }
+
+    // Wrong: multiple beans, no qualifier
+    @Autowired
+    private PaymentService paymentService;  // ambiguous: CreditCard and PayPal both implement it
+
+    // Fix: use @Qualifier
+    @Autowired
+    @Qualifier("creditCardPaymentService")
+    private PaymentService paymentService;
+
+    // Or: mark one as @Primary
+    @Service
+    @Primary
+    public class CreditCardPaymentService implements PaymentService { ... }
+  tags:
+    - spring
+    - beans
+    - dependency-injection
+    - component-scan
+
+- id: "java-spring-002"
+  error_type: "BeanCreationException"
+  severity: "critical"
+  pattern: "org\\.springframework\\.beans\\.factory\\.BeanCreationException: Error creating bean with name '(.+)'"
+  cause: >
+    Spring failed to instantiate or configure a bean. This is a wrapper exception that
+    usually has a root cause. Look at the "Caused by:" chain in the stack trace. Common
+    root causes: constructor that throws an exception, @PostConstruct method failure,
+    dependency that itself failed to create, or circular dependency.
+  fix_template: |
+    // Always read the "Caused by:" chain — BeanCreationException is a wrapper.
+    // The actual error is usually several lines below the first exception.
+
+    // Caused by: java.lang.NullPointerException in @PostConstruct
+    @Service
+    public class CacheService {
+        @Autowired
+        private DataSource dataSource;
+
+        @PostConstruct
+        public void init() {
+            // if dataSource is null or throws — BeanCreationException
+            dataSource.getConnection().prepareStatement("SELECT 1").execute();
+        }
+    }
+
+    // Fix: wrap @PostConstruct in try/catch and log clearly
+    @PostConstruct
+    public void init() {
+        try {
+            // ... initialization
+        } catch (Exception e) {
+            throw new IllegalStateException("CacheService initialization failed", e);
+        }
+    }
+
+    // Caused by: Configuration properties binding failure
+    // Fix: check application.properties/yaml matches @ConfigurationProperties fields
+    @ConfigurationProperties(prefix = "myapp")
+    public class AppProperties {
+        private String apiKey;  // must match myapp.api-key in properties file
+        // Spring converts kebab-case to camelCase automatically
+    }
+  tags:
+    - spring
+    - beans
+    - startup
+    - bean-creation
+
+- id: "java-spring-003"
+  error_type: "LazyInitializationException"
+  severity: "warning"
+  pattern: "org\\.hibernate\\.LazyInitializationException: could not initialize proxy .* - no Session"
+  cause: >
+    A lazily-loaded Hibernate association (collection or entity) was accessed after the
+    database session (Hibernate Session / JPA EntityManager) was closed. This is the
+    N+1 query problem's cousin — the entity was loaded in a transaction, the transaction
+    ended, and then you tried to access a lazy collection outside of that transaction.
+  fix_template: |
+    // Wrong: accessing lazy collection outside transaction
+    @Service
+    public class OrderService {
+        @Autowired
+        private OrderRepository orderRepo;
+
+        public void processOrder(Long id) {
+            Order order = orderRepo.findById(id).get();  // transaction ends here
+            List<Item> items = order.getItems();         // LazyInitializationException!
+            items.forEach(item -> process(item));
+        }
+    }
+
+    // Fix 1: use @Transactional to keep session open
+    @Service
+    public class OrderService {
+        @Transactional(readOnly = true)
+        public void processOrder(Long id) {
+            Order order = orderRepo.findById(id).get();  // session stays open
+            order.getItems().forEach(item -> process(item));
+        }
+    }
+
+    // Fix 2: use JOIN FETCH in JPQL to eagerly load
+    @Query("SELECT o FROM Order o JOIN FETCH o.items WHERE o.id = :id")
+    Optional<Order> findByIdWithItems(@Param("id") Long id);
+
+    // Fix 3: use EntityGraph
+    @EntityGraph(attributePaths = {"items", "items.product"})
+    @Query("SELECT o FROM Order o WHERE o.id = :id")
+    Optional<Order> findByIdWithGraph(@Param("id") Long id);
+
+    // Fix 4: use a DTO projection to only load what you need
+    @Query("SELECT new com.example.OrderSummary(o.id, SIZE(o.items)) FROM Order o WHERE o.id = :id")
+    Optional<OrderSummary> findSummary(@Param("id") Long id);
+  tags:
+    - spring
+    - hibernate
+    - jpa
+    - lazy-loading
+    - transaction
+
+- id: "java-spring-004"
+  error_type: "DataIntegrityViolationException"
+  severity: "warning"
+  pattern: "org\\.springframework\\.dao\\.DataIntegrityViolationException"
+  cause: >
+    A database constraint was violated — typically a unique constraint, foreign key
+    constraint, or NOT NULL constraint. Spring wraps JDBC and JPA exceptions into this
+    unified exception. The actual SQL error is in the cause chain.
+  fix_template: |
+    import org.springframework.dao.DataIntegrityViolationException;
+
+    // Catching and handling:
+    @PostMapping("/users")
+    public ResponseEntity<?> createUser(@RequestBody CreateUserRequest req) {
+        try {
+            User user = userService.create(req);
+            return ResponseEntity.status(201).body(user);
+        } catch (DataIntegrityViolationException ex) {
+            // Check cause to identify which constraint failed
+            String cause = ex.getMostSpecificCause().getMessage();
+            if (cause.contains("unique_user_email")) {
+                return ResponseEntity.status(409)
+                    .body(Map.of("error", "Email already in use"));
+            }
+            throw ex;  // re-throw unexpected integrity violations
+        }
+    }
+
+    // Proactive fix: use exists() check before insert
+    @Transactional
+    public User create(CreateUserRequest req) {
+        if (userRepo.existsByEmail(req.getEmail())) {
+            throw new DuplicateEmailException("Email already registered: " + req.getEmail());
+        }
+        return userRepo.save(new User(req));
+    }
+
+    // Note: check + insert has a race condition — the catch approach above is safer
+    // Use optimistic locking or database constraints as the ultimate source of truth
+  tags:
+    - spring
+    - database
+    - constraint
+    - integrity
+    - unique
+
+- id: "java-spring-005"
+  error_type: "BeanCurrentlyInCreationException"
+  severity: "critical"
+  pattern: "org\\.springframework\\.beans\\.factory\\.BeanCurrentlyInCreationException: Error creating bean with name '(.+)': Requested bean is currently in creation"
+  cause: >
+    A circular dependency exists between beans — Bean A requires Bean B, and Bean B
+    requires Bean A. Spring's constructor injection cannot resolve circular dependencies.
+    Field injection (with @Autowired on fields) used to work around this but is now
+    also restricted in newer Spring versions.
+  fix_template: |
+    // Wrong: circular dependency via constructor injection
+    @Service
+    public class ServiceA {
+        private final ServiceB serviceB;
+        @Autowired
+        public ServiceA(ServiceB serviceB) { this.serviceB = serviceB; }
+    }
+
+    @Service
+    public class ServiceB {
+        private final ServiceA serviceA;
+        @Autowired
+        public ServiceB(ServiceA serviceA) { this.serviceA = serviceA; }
+        // BeanCurrentlyInCreationException: A needs B, B needs A
+    }
+
+    // Fix 1: refactor — introduce a third service that both depend on
+    @Service
+    public class SharedService { /* logic used by both A and B */ }
+
+    @Service
+    public class ServiceA {
+        private final SharedService shared;
+        @Autowired
+        public ServiceA(SharedService shared) { this.shared = shared; }
+    }
+
+    @Service
+    public class ServiceB {
+        private final SharedService shared;
+        @Autowired
+        public ServiceB(SharedService shared) { this.shared = shared; }
+    }
+
+    // Fix 2: use @Lazy on one injection point to break the cycle
+    @Service
+    public class ServiceA {
+        private final ServiceB serviceB;
+        @Autowired
+        public ServiceA(@Lazy ServiceB serviceB) { this.serviceB = serviceB; }
+    }
+
+    // Fix 3: use setter injection (allows late initialization)
+    @Service
+    public class ServiceA {
+        private ServiceB serviceB;
+        @Autowired
+        public void setServiceB(ServiceB serviceB) { this.serviceB = serviceB; }
+    }
+  tags:
+    - spring
+    - circular-dependency
+    - beans
+    - dependency-injection

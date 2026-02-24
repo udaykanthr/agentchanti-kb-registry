@@ -1,0 +1,218 @@
+- id: "js-node-001"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "ENOENT: no such file or directory"
+  cause: >
+    Node.js tried to access a file or directory that does not exist. This is one of
+    the most common file system errors. Causes: incorrect file path, wrong working
+    directory, file deleted or not created yet, or case-sensitivity mismatch on
+    Linux (where paths are case-sensitive).
+  fix_template: |
+    const fs = require('fs');
+    const path = require('path');
+
+    // Wrong: relative path resolved from wrong working directory
+    fs.readFileSync('config/settings.json');  // ENOENT if cwd is not project root
+
+    // Right: use __dirname for paths relative to the current file
+    const configPath = path.join(__dirname, 'config', 'settings.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // Right: check existence before reading
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } else {
+      console.warn(`Config not found at ${configPath}, using defaults`);
+    }
+
+    // Right: async version with proper error handling
+    const { readFile } = require('fs/promises');
+
+    async function loadConfig() {
+      try {
+        const data = await readFile(configPath, 'utf8');
+        return JSON.parse(data);
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          return getDefaultConfig();
+        }
+        throw err;  // re-throw unexpected errors
+      }
+    }
+  tags:
+    - node
+    - filesystem
+    - enoent
+    - path
+
+- id: "js-node-002"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "EACCES: permission denied"
+  cause: >
+    Node.js does not have the filesystem permissions needed to read, write, or execute
+    the target file or directory. This commonly occurs when: trying to write to a
+    system directory, running without sudo where root permissions are needed, or
+    file ownership is wrong.
+  fix_template: |
+    // Check file permissions before writing
+    const { access, constants } = require('fs/promises');
+
+    async function canWrite(filePath) {
+      try {
+        await access(filePath, constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Shell: fix permissions for a file or directory
+    // chmod 644 file.txt      (read/write for owner, read for others)
+    // chmod 755 directory/    (rwx for owner, rx for others)
+    // chown user:group file.txt  (change owner)
+
+    // Node.js: chmod programmatically
+    const fs = require('fs');
+    fs.chmod('/path/to/file', 0o644, (err) => {
+      if (err) throw err;
+    });
+
+    // For servers binding to port < 1024 (EACCES):
+    // Option 1: run as root (not recommended for production)
+    // Option 2: use authbind or setcap
+    // Option 3: bind to port > 1024 and use a reverse proxy (nginx/caddy)
+    // Option 4: configure port forwarding: iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 3000
+  tags:
+    - node
+    - filesystem
+    - permissions
+    - eacces
+
+- id: "js-node-003"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "EADDRINUSE: address already in use :::?(\\d+)"
+  cause: >
+    The port you are trying to bind to is already in use by another process.
+    This commonly occurs when a previous server instance did not shut down cleanly,
+    or multiple instances of the app are running.
+  fix_template: |
+    // Find and kill the process using the port (Linux/macOS)
+    // lsof -ti:3000 | xargs kill -9
+    // fuser -k 3000/tcp
+
+    // Windows:
+    // netstat -ano | findstr :3000
+    // taskkill /PID <pid> /F
+
+    // In Node.js: graceful shutdown to release port
+    const server = http.createServer(app);
+
+    process.on('SIGTERM', () => {
+      server.close(() => {
+        console.log('Server closed, port released');
+        process.exit(0);
+      });
+    });
+
+    // Auto-retry on a different port (dev only)
+    function startServer(port) {
+      server.listen(port, () => {
+        console.log(`Server running on port ${port}`);
+      }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.warn(`Port ${port} in use, trying ${port + 1}`);
+          startServer(port + 1);
+        } else {
+          throw err;
+        }
+      });
+    }
+
+    startServer(3000);
+  tags:
+    - node
+    - port
+    - server
+    - eaddrinuse
+
+- id: "js-node-004"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "Cannot find module '(.+)'"
+  cause: >
+    Node.js cannot resolve the module. This is caused by: the package not being
+    installed, a wrong path for local modules (should start with ./ or ../), or the
+    module being in node_modules but node_modules being corrupted or missing.
+  fix_template: |
+    // For npm packages: install the package
+    npm install express
+    npm install --save-dev jest
+
+    // For local modules: ensure correct relative path
+    // Wrong:
+    const utils = require('utils');       // looks in node_modules
+    const utils = require('src/utils');   // not a relative path
+
+    // Right:
+    const utils = require('./utils');     // same directory
+    const utils = require('../utils');    // parent directory
+    const utils = require('./src/utils'); // subdirectory
+
+    // If node_modules is corrupt or missing:
+    rm -rf node_modules package-lock.json
+    npm install
+
+    // Check that package.json has the dependency listed:
+    // npm list express  — shows if express is installed
+    // npm install  — installs all listed dependencies
+
+    // ESM-style (package.json "type": "module"):
+    import utils from './utils.js';  // must include .js extension for ESM
+  tags:
+    - node
+    - module
+    - require
+    - import
+
+- id: "js-node-005"
+  error_type: "Error"
+  severity: "warning"
+  pattern: "ERR_REQUIRE_ESM"
+  cause: >
+    You are using require() to import a package that has been published as ESM-only
+    (it has "type": "module" in its package.json). Many modern packages (e.g., node-fetch v3,
+    chalk v5, nanoid v4+) are now ESM-only and cannot be required() with CommonJS.
+  fix_template: |
+    // Option 1: Use dynamic import() inside async function (works in both CJS and ESM)
+    async function loadFetch() {
+      const { default: fetch } = await import('node-fetch');
+      return fetch;
+    }
+
+    // Option 2: Use an older CJS-compatible version
+    // package.json:
+    // "node-fetch": "^2.6.7"  ← v2 is CJS compatible
+    npm install node-fetch@2
+
+    // Option 3: Convert your project to ESM
+    // In package.json:
+    // "type": "module"
+    // Then rename files from .js to .mjs, or use .js with type:module
+    // And replace all require() with import:
+    import fetch from 'node-fetch';
+
+    // Option 4: Use the built-in fetch (Node.js 18+)
+    const response = await fetch('https://api.example.com/data');
+    const data = await response.json();
+
+    // Option 5: Use node-fetch alternatives that support CJS:
+    // - axios (CJS compatible)
+    // - got (newer versions are ESM-only, use v11 for CJS)
+  tags:
+    - node
+    - esm
+    - require
+    - commonjs
+    - module

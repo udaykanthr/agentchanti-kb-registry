@@ -1,0 +1,185 @@
+- id: "py-django-001"
+  error_type: "ImproperlyConfigured"
+  severity: "critical"
+  pattern: "django\\.core\\.exceptions\\.ImproperlyConfigured: (.+)"
+  cause: >
+    Django's configuration is incomplete or incorrect. This is raised during startup
+    when required settings are missing or invalid. Common causes: missing SECRET_KEY,
+    invalid DATABASES configuration, missing app in INSTALLED_APPS, or DJANGO_SETTINGS_MODULE
+    not set.
+  fix_template: |
+    # Error: "Requested setting DATABASES, but settings are not configured"
+    # Fix: Set DJANGO_SETTINGS_MODULE before importing Django
+    import os
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'myproject.settings')
+
+    import django
+    django.setup()
+
+    # Error: "SECRET_KEY setting must not be empty"
+    # Fix: in settings.py
+    import os
+    SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'fallback-dev-only-key')
+    # For production, always use environment variables:
+    # SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
+
+    # Error: app not in INSTALLED_APPS
+    # Fix:
+    INSTALLED_APPS = [
+        'django.contrib.admin',
+        'django.contrib.auth',
+        'django.contrib.contenttypes',
+        'myapp',  # ← add your app here
+    ]
+  tags:
+    - django
+    - configuration
+    - settings
+    - startup
+
+- id: "py-django-002"
+  error_type: "FieldError"
+  severity: "warning"
+  pattern: "Cannot resolve keyword '(.+)' into field\\. Choices are: (.+)"
+  cause: >
+    A QuerySet filter, order_by, or annotation references a field name that does not
+    exist on the model. This is usually a typo or referencing the wrong related field
+    name (Django uses double-underscore __ for related field traversal).
+  fix_template: |
+    from myapp.models import Article
+
+    # Wrong:
+    articles = Article.objects.filter(autor=user)  # typo: 'autor' not 'author'
+
+    # Right:
+    articles = Article.objects.filter(author=user)
+
+    # Wrong: incorrect related field traversal
+    articles = Article.objects.filter(author.name="John")  # invalid syntax
+    articles = Article.objects.filter(author_name="John")  # wrong separator
+
+    # Right: use double underscore for traversal
+    articles = Article.objects.filter(author__name="John")
+    articles = Article.objects.filter(author__profile__city="London")
+
+    # To see available field names on a model:
+    print([f.name for f in Article._meta.get_fields()])
+  tags:
+    - django
+    - orm
+    - queryset
+    - field
+
+- id: "py-django-003"
+  error_type: "DoesNotExist"
+  severity: "warning"
+  pattern: "(.+) matching query does not exist"
+  cause: >
+    Model.objects.get() found no matching record. get() expects exactly one result;
+    it raises DoesNotExist if nothing matches and MultipleObjectsReturned if more
+    than one matches.
+  fix_template: |
+    from myapp.models import User
+    from django.shortcuts import get_object_or_404
+
+    # Wrong: unguarded get()
+    user = User.objects.get(id=user_id)  # DoesNotExist if not found
+
+    # Right option 1: handle the exception
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        user = None  # or return 404 response
+
+    # Right option 2: use get_object_or_404() in views (returns HTTP 404)
+    user = get_object_or_404(User, id=user_id)
+
+    # Right option 3: use filter().first() to return None instead of raising
+    user = User.objects.filter(id=user_id).first()  # None if not found
+  tags:
+    - django
+    - orm
+    - queryset
+    - get
+  related_errors:
+    - py-django-004
+
+- id: "py-django-004"
+  error_type: "MultipleObjectsReturned"
+  severity: "warning"
+  pattern: "get\\(\\) returned more than one (.+) -- it returned (\\d+)!"
+  cause: >
+    Model.objects.get() found more than one matching record. The query parameters
+    are not unique enough to identify a single object. Often caused by using a
+    non-unique field in get().
+  fix_template: |
+    from myapp.models import Article
+
+    # Wrong: email may not be unique, or data is duplicated
+    article = Article.objects.get(status='published')  # multiple published articles
+
+    # Right option 1: filter() and take the first/latest
+    article = Article.objects.filter(status='published').order_by('-created_at').first()
+
+    # Right option 2: add more specific criteria
+    article = Article.objects.get(slug='my-unique-slug', status='published')
+
+    # Right option 3: if data inconsistency, log and handle
+    try:
+        article = Article.objects.get(external_id='abc123')
+    except Article.MultipleObjectsReturned:
+        # Log the data issue and use latest
+        import logging
+        logging.warning("Duplicate external_id 'abc123' found")
+        article = Article.objects.filter(external_id='abc123').latest('created_at')
+  tags:
+    - django
+    - orm
+    - queryset
+    - get
+  related_errors:
+    - py-django-003
+
+- id: "py-django-005"
+  error_type: "IntegrityError"
+  severity: "critical"
+  pattern: "UNIQUE constraint failed: (.+)"
+  cause: >
+    An INSERT or UPDATE violates a UNIQUE constraint in the database. This is raised
+    by the database layer and wrapped by Django's ORM. Common causes: attempting to
+    create a duplicate record, race conditions in concurrent requests, or missing
+    get_or_create() usage.
+  fix_template: |
+    from django.db import IntegrityError
+    from myapp.models import UserProfile
+
+    # Wrong: naive create without uniqueness check
+    UserProfile.objects.create(user=user, username="john")  # IntegrityError if exists
+
+    # Right option 1: use get_or_create()
+    profile, created = UserProfile.objects.get_or_create(
+        user=user,
+        defaults={'username': 'john', 'bio': ''}
+    )
+    if created:
+        print("New profile created")
+    else:
+        print("Profile already exists")
+
+    # Right option 2: use update_or_create()
+    profile, created = UserProfile.objects.update_or_create(
+        user=user,
+        defaults={'username': 'john'}
+    )
+
+    # Right option 3: handle race condition with try/except
+    try:
+        profile = UserProfile.objects.create(user=user)
+    except IntegrityError:
+        profile = UserProfile.objects.get(user=user)
+  tags:
+    - django
+    - database
+    - integrity
+    - unique
+    - constraint

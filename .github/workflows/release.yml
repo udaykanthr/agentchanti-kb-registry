@@ -1,0 +1,93 @@
+name: Release KB Registry
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Bump version in manifest.json
+        id: bump
+        run: |
+          python scripts/bump_version.py
+          NEW_VERSION=$(python -c "import json; print(json.load(open('manifest.json'))['version'])")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build release zip
+        run: |
+          python scripts/build_release.py ${{ steps.bump.outputs.version }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit manifest.json version bump
+        run: |
+          git add manifest.json
+          git diff --staged --quiet || git commit -m "chore: bump registry to v${{ steps.bump.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Read changelog from manifest
+        id: changelog
+        run: |
+          CHANGELOG=$(python -c "import json; print(json.load(open('manifest.json')).get('changelog', 'No changelog provided.'))")
+          echo "text=$CHANGELOG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const version = '${{ steps.bump.outputs.version }}';
+            const changelog = '${{ steps.changelog.outputs.text }}';
+            const zipPath = `kb-registry-v${version}.zip`;
+
+            // Create the release
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              name: `KB Registry v${version}`,
+              body: changelog,
+              draft: false,
+              prerelease: false,
+            });
+
+            // Upload the zip asset
+            const zipContent = fs.readFileSync(zipPath);
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: zipPath,
+              data: zipContent,
+              headers: {
+                'content-type': 'application/zip',
+                'content-length': zipContent.length,
+              },
+            });
+
+            console.log(`Release v${version} created: ${release.data.html_url}`);

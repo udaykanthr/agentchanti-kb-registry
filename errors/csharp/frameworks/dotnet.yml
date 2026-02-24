@@ -1,0 +1,269 @@
+- id: "cs-ef-001"
+  error_type: "DbUpdateConcurrencyException"
+  severity: "warning"
+  pattern: "Microsoft\\.EntityFrameworkCore\\.DbUpdateConcurrencyException"
+  cause: >
+    An optimistic concurrency conflict was detected. EF Core read a row and then attempted
+    to update or delete it, but another process modified or deleted the row in between.
+    This is raised when using a concurrency token (like [Timestamp] or [ConcurrencyCheck]).
+  fix_template: |
+    using Microsoft.EntityFrameworkCore;
+
+    // Entity with optimistic concurrency token
+    public class Order
+    {
+        public int Id { get; set; }
+        public decimal Total { get; set; }
+
+        [Timestamp]  // EF uses this byte[] for optimistic concurrency check
+        public byte[] RowVersion { get; set; }
+    }
+
+    // Handling the conflict
+    public async Task<bool> UpdateOrderAsync(int id, decimal newTotal)
+    {
+        var order = await context.Orders.FindAsync(id);
+        order.Total = newTotal;
+
+        try
+        {
+            await context.SaveChangesAsync();
+            return true;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // Reload the entity to get the latest values
+            var entry = ex.Entries.Single();
+            var databaseValues = await entry.GetDatabaseValuesAsync();
+
+            if (databaseValues == null)
+            {
+                // Row was deleted — handle accordingly
+                throw new InvalidOperationException("Order was deleted by another user.");
+            }
+
+            // Option 1: Client wins — override with our values
+            entry.OriginalValues.SetValues(databaseValues);
+            await context.SaveChangesAsync();
+
+            // Option 2: Database wins — discard our changes
+            // entry.CurrentValues.SetValues(databaseValues);
+
+            return false;
+        }
+    }
+  tags:
+    - csharp
+    - ef-core
+    - concurrency
+    - database
+    - optimistic-concurrency
+
+- id: "cs-ef-002"
+  error_type: "DbUpdateException"
+  severity: "warning"
+  pattern: "Microsoft\\.EntityFrameworkCore\\.DbUpdateException"
+  cause: >
+    EF Core failed to persist changes to the database. This is a wrapper around a
+    database-specific error (inner exception). Common causes: UNIQUE constraint violation,
+    FK constraint violation, NOT NULL violation, or the database being unavailable.
+    Always inspect the InnerException for the actual database error.
+  fix_template: |
+    using Microsoft.EntityFrameworkCore;
+
+    public async Task<User> CreateUserAsync(CreateUserDto dto)
+    {
+        var user = new User { Email = dto.Email, Name = dto.Name };
+        context.Users.Add(user);
+
+        try
+        {
+            await context.SaveChangesAsync();
+            return user;
+        }
+        catch (DbUpdateException ex)
+        {
+            // Inspect inner exception for specifics
+            var innerMessage = ex.InnerException?.Message ?? "";
+
+            if (innerMessage.Contains("UNIQUE") || innerMessage.Contains("unique"))
+            {
+                throw new ConflictException($"Email '{dto.Email}' is already registered.");
+            }
+
+            if (innerMessage.Contains("FOREIGN KEY") || innerMessage.Contains("foreign key"))
+            {
+                throw new ValidationException("Referenced entity does not exist.");
+            }
+
+            // Log the full exception for investigation
+            logger.LogError(ex, "DbUpdateException while creating user {@Dto}", dto);
+            throw;
+        }
+    }
+
+    // Proactive duplicate check (race condition safe with try/catch above):
+    var exists = await context.Users.AnyAsync(u => u.Email == dto.Email);
+    if (exists) throw new ConflictException("Email already in use.");
+  tags:
+    - csharp
+    - ef-core
+    - database
+    - constraint
+    - exception
+
+- id: "cs-ef-003"
+  error_type: "InvalidOperationException"
+  severity: "warning"
+  pattern: "A second operation was started on this context instance before a previous operation completed"
+  cause: >
+    The same DbContext instance was accessed concurrently. EF Core's DbContext is not
+    thread-safe. This commonly happens in ASP.NET Core when using async/await incorrectly,
+    starting multiple async operations on the same context without awaiting them, or
+    injecting DbContext as Singleton (instead of Scoped).
+  fix_template: |
+    // Wrong: DbContext registered as Singleton (should be Scoped)
+    // builder.Services.AddSingleton<AppDbContext>();  // WRONG
+
+    // Right: always use Scoped for DbContext
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseSqlServer(connectionString));
+    // AddDbContext registers as Scoped by default
+
+    // Wrong: concurrent async operations on same context
+    public async Task ProcessAsync()
+    {
+        var task1 = context.Users.ToListAsync();
+        var task2 = context.Orders.ToListAsync();
+        var results = await Task.WhenAll(task1, task2);  // concurrent — throws!
+    }
+
+    // Right: await sequentially when using the same context
+    public async Task ProcessAsync()
+    {
+        var users = await context.Users.ToListAsync();
+        var orders = await context.Orders.ToListAsync();
+    }
+
+    // Right: for parallel, use separate DbContext instances (via factory)
+    public async Task ProcessParallelAsync(IDbContextFactory<AppDbContext> factory)
+    {
+        await using var ctx1 = await factory.CreateDbContextAsync();
+        await using var ctx2 = await factory.CreateDbContextAsync();
+
+        var task1 = ctx1.Users.ToListAsync();
+        var task2 = ctx2.Orders.ToListAsync();
+        await Task.WhenAll(task1, task2);
+    }
+  tags:
+    - csharp
+    - ef-core
+    - concurrency
+    - dbcontext
+    - async
+
+- id: "cs-http-001"
+  error_type: "HttpRequestException"
+  severity: "warning"
+  pattern: "System\\.Net\\.Http\\.HttpRequestException"
+  cause: >
+    An HTTP request failed due to a network-level error (connection refused, DNS failure,
+    SSL error, or a non-success HTTP response when EnsureSuccessStatusCode() is called).
+    This is different from business-logic errors (those are in the response body).
+  fix_template: |
+    using System.Net.Http;
+
+    public async Task<WeatherData> GetWeatherAsync(string city, CancellationToken ct)
+    {
+        try
+        {
+            var response = await httpClient.GetAsync($"/weather?city={Uri.EscapeDataString(city)}", ct);
+
+            // Option 1: manual status check with descriptive error
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                throw new WeatherServiceException(
+                    $"Weather API returned {(int)response.StatusCode}: {body}");
+            }
+
+            // Option 2: let EnsureSuccessStatusCode() throw HttpRequestException
+            response.EnsureSuccessStatusCode();
+
+            return await response.Content.ReadFromJsonAsync<WeatherData>(ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "Failed to fetch weather for {City}", city);
+            // Re-throw or return cached/default value:
+            return WeatherData.Unknown;
+        }
+        catch (TaskCanceledException)
+        {
+            logger.LogWarning("Weather request for {City} timed out", city);
+            throw;
+        }
+    }
+
+    // Use Polly for retry/circuit-breaker:
+    // builder.Services.AddHttpClient<WeatherService>()
+    //     .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(3, _ => TimeSpan.FromSeconds(2)));
+  tags:
+    - csharp
+    - http
+    - httpclient
+    - network
+    - retry
+
+- id: "cs-oce-001"
+  error_type: "OperationCanceledException"
+  severity: "info"
+  pattern: "System\\.OperationCanceledException|The request was aborted"
+  cause: >
+    In ASP.NET Core, OperationCanceledException (a base class of TaskCanceledException)
+    is thrown when a client disconnects before the response is complete, or when the
+    request's CancellationToken is cancelled. This is normal behavior that should be
+    handled gracefully, not logged as an error.
+  fix_template: |
+    using Microsoft.AspNetCore.Mvc;
+
+    // ASP.NET Core: filter out OperationCanceledException from error logging
+    // In Program.cs or middleware:
+    app.Use(async (context, next) =>
+    {
+        try
+        {
+            await next(context);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Client disconnected — this is normal, not an error
+            // Do NOT log as Error; optionally log as Debug/Info
+            context.Response.StatusCode = 499;  // nginx-style "Client Closed Request"
+        }
+    });
+
+    // In controllers: pass CancellationToken, let it propagate naturally
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetReport(int id, CancellationToken ct)
+    {
+        try
+        {
+            var report = await reportService.GenerateAsync(id, ct);
+            return Ok(report);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(499);
+        }
+    }
+
+    // Configure middleware to suppress these in error logging
+    // appsettings.json:
+    // "Logging": { "LogLevel": { "Microsoft.AspNetCore": "Warning" } }
+  tags:
+    - csharp
+    - aspnet
+    - cancellation
+    - async
+    - request

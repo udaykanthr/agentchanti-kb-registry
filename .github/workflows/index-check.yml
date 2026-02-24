@@ -1,0 +1,85 @@
+name: Index Quality Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  index-check:
+    name: Content Index Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Run index check script
+        id: index_check
+        run: |
+          python scripts/index_check.py 2>&1 | tee /tmp/index_output.txt
+          echo "exit_code=0" >> $GITHUB_OUTPUT
+        continue-on-error: false
+
+      - name: Read index check output
+        id: read_output
+        run: |
+          OUTPUT=$(cat /tmp/index_output.txt)
+          OUTPUT="${OUTPUT//'%'/'%25'}"
+          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
+          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
+          echo "content=$OUTPUT" >> $GITHUB_OUTPUT
+
+      - name: Comment index check results on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `${{ steps.read_output.outputs.content }}`;
+
+            const body = `## 📊 KB Index Check Report
+
+            <details>
+            <summary>Index Check Output</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+
+            _Warnings are informational only and do not block merging. Errors will be caught by the Validate workflow._`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(c =>
+              c.body.includes('KB Index Check Report') && c.user.type === 'Bot'
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
