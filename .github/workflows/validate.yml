@@ -9,6 +9,9 @@ jobs:
   validate:
     name: Validate Registry Content
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
 
     steps:
       - name: Checkout repository

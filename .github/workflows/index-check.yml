@@ -9,6 +9,9 @@ jobs:
   index-check:
     name: Content Index Check
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
 
     steps:
       - name: Checkout repository
