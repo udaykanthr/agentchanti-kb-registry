@@ -33,10 +33,10 @@ consistently in every step — do NOT invent a different name.
 npm create vite@latest <project-name> -- --template react --no-interactive
 ```
 
-## 2. Install react dependencies
+## 2. Install react dependencies *** Important ***
 
 ```bash
-npm install react-router-dom
+npm install react-router-dom prop-types
 ```
 
 ## 3. install NPM packages
