@@ -25,8 +25,12 @@ to ensure components render correctly and DOM assertions work.
 Install the following React vite packages initialization:
 *** This step is very important to create necessary files and folders example, src/App.jsx, src/index.jsx, src/main.jsx, src/App.css, src/index.css, vite.config.js, package.json ***
 
+IMPORTANT: In ALL commands below, replace `<project-name>` with the EXACT
+project name derived from the user's task description. Use the SAME name
+consistently in every step — do NOT invent a different name.
+
 ```bash
-npm create vite@latest my-react-app -- --template react --no-interactive
+npm create vite@latest <project-name> -- --template react --no-interactive
 ```
 
 ## 2. Install react dependencies
