@@ -21,7 +21,7 @@ to ensure components render correctly and DOM assertions work.
 
 *** Do not create TS or TSX files if JS or JSX already exists, Update those files insetead ***
 
-## 1. Required Packages
+## 1. Required Packages *** Important ***
 
 Install the following development dependencies:
 
