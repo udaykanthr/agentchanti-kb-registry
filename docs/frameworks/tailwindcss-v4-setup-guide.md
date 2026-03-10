@@ -64,9 +64,6 @@ npx tailwindcss init --full
 The `tailwind.config.js` / `tailwind.config.ts` configuration file is also
 **no longer used** in Tailwind CSS v4. Configuration is now done via CSS.
 
-`postcss.config.mjs` and `postcss.config.js` are also **no longer used** in Tailwind CSS v4.
-**Use the filename `.postcssrc.json` instead. `postcss.config.mjs` and `postcss.config.js`**
-
 
 ## Correct Installation (PostCSS)
 
