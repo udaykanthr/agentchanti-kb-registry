@@ -16,34 +16,30 @@ tags:
 
 ## Overview
 
-Setting up Vitest in a React + Vite project requires specific packages and configuration
-to ensure components render correctly and DOM assertions work.
+When setting up a React project with Vitest and @testing-library/react, the following
+packages are ALL required. Missing any of these causes hard-to-debug import/runtime errors.
 
-*** Do not create TS or TSX files if JS or JSX already exists, Update those files insetead ***
-
-## 1. Required Packages *** Important ***
-
-Install the following development dependencies:
+## Required Dev Packages (complete list)
 
 ```bash
-npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom @vitest/ui
+npm install --save-dev vitest jsdom @testing-library/react @testing-library/dom @testing-library/jest-dom @testing-library/user-event @vitejs/plugin-react
 ```
 
-- `vitest`: The testing framework.
-- `@testing-library/react`: For rendering React components in tests.
-- `@testing-library/jest-dom`: For custom DOM matchers (e.g., `toBeInTheDocument`).
-- `jsdom`: Browser environment simulation for Node.js.
-- `@vitest/ui`: Optional UI for viewing test results.
+### Package purposes:
+| Package | Purpose | Error if missing |
+|---------|---------|-----------------|
+| `vitest` | Test runner | `vitest: command not found` |
+| `jsdom` | DOM environment for tests | `Error: Failed to find a valid JSDOM implementation` or `ReferenceError: document is not defined` |
+| `@testing-library/react` | `render()`, `screen` queries | `Cannot find module '@testing-library/react'` |
+| `@testing-library/dom` | Core DOM queries (peer dep of @testing-library/react) | `Cannot find module '@testing-library/dom'` |
+| `@testing-library/jest-dom` | Custom matchers: `toBeInTheDocument()`, `toHaveClass()` | `TypeError: expect(...).toBeInTheDocument is not a function` |
+| `@testing-library/user-event` | Realistic user interactions: `userEvent.click()` | `Cannot find module '@testing-library/user-event'` |
+| `@vitejs/plugin-react` | JSX transform for Vite | `[plugin:vite:esbuild] Failed to parse source for import analysis` |
 
-## 2. Vite Configuration (`vite.config.ts` or `vite.config.js`)
+## Required vitest.config.js
 
-Update your Vite config to include the test environment setup. Note the
-`/// <reference types="vitest" />` comment is required for TypeScript to recognize
-the test configuration.
-
-```typescript
-/// <reference types="vitest" />
-import { defineConfig } from 'vite'
+```js
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -51,53 +47,28 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: './src/setupTests.ts', // or .js
+    setupFiles: './vitest.setup.js',
   },
 })
 ```
-- `environment: 'jsdom'`: Simulates a browser environment.
-- `globals: true`: Allows using `describe`, `it`, `expect` without importing them.
-- `setupFiles`: Runs before each test file, used to inject global matchers.
 
-## 3. Test Setup File (`src/setupTests.ts` or `src/setupTests.js`)
+## Required vitest.setup.js
 
-Create a setup file to import `@testing-library/jest-dom`. This gives you access
-to custom matchers like `.toBeInTheDocument()`. Depending on your project type, this may be a `.js` or `.ts` file.
-
-```typescript
-import '@testing-library/jest-dom'
+```js
+import '@testing-library/jest-dom/vitest'
 ```
 
-## 4. TypeScript Configuration (`tsconfig.json` or `tsconfig.app.json`)
+**CRITICAL**: Use `@testing-library/jest-dom/vitest` (NOT `@testing-library/jest-dom`).
+The base import only works with Jest. The `/vitest` subpath registers matchers correctly
+with Vitest's `expect`.
 
-If using TypeScript, ensure `vitest/globals` and `@testing-library/jest-dom` are
-included in your `compilerOptions.types`.
+## Common mistakes
 
-```json
-{
-  "compilerOptions": {
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
-  }
-}
-```
-This resolves errors like `ReferenceError: describe is not defined` or
-`Property 'toBeInTheDocument' does not exist on type 'Matchers<any>'`.
-
-## 5. Add Scripts to `package.json`
-
-Add test scripts to your `package.json` using `npm pkg set`:
-
-```bash
-npm pkg set scripts.test="vitest"
-npm pkg set scripts.test:ui="vitest --ui"
-npm pkg set scripts.test:coverage="vitest run --coverage"
-```
-
-## Troubleshooting
-
-- **ReferenceError: describe is not defined**: Ensure `globals: true` is in
-  `vite.config.ts`, and `vitest/globals` is in `tsconfig.json` types.
-- **ReferenceError: jest is not defined**:  Ensure `import { describe, test, expect } from 'vitest'` is in .test files and remove and never use jest related imports and functions.
-- **Error: Failed to resolve import**: Ensure `import <component-name> from '<component-path>'` is in .test files and component-path is correct.  
-- **document/window is not defined**: Ensure `environment: 'jsdom'` is set in
-  your test config and `jsdom` is installed.
+1. **Missing `jsdom`**: Vitest defaults to `node` environment. Without `jsdom`, there is
+   no `document`, `window`, or DOM — all component renders fail silently or crash.
+2. **Missing `@testing-library/dom`**: This is a peer dependency of `@testing-library/react`.
+   npm v7+ auto-installs peer deps, but older versions or CI environments may not.
+3. **Wrong jest-dom import**: `import '@testing-library/jest-dom'` in Vitest causes
+   `expect.extend is not a function` or matchers not being registered.
+4. **Missing `@vitejs/plugin-react`**: Without the React plugin, Vite cannot transform
+   JSX in `.jsx`/`.tsx` files, causing parse errors in tests.
