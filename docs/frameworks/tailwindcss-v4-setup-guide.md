@@ -3,7 +3,7 @@ id: "doc-008"
 title: "Tailwind CSS v4 Setup Guide"
 category: "doc"
 language: "all"
-version: "1.0.0"
+version: "1.1.0"
 created_at: "2026-03-04"
 tags:
   - tailwindcss
@@ -167,3 +167,58 @@ module.exports = {
   }
 }
 ```
+
+### `.mjs` vs `.js` Config File Extension
+
+When a Vite scaffold creates `postcss.config.mjs` (ESM module), commands and tools must
+reference the **exact filename**. Never pass `--config postcss.config.js` when the file
+on disk is `postcss.config.mjs`.
+
+**WRONG — file extension mismatch:**
+```bash
+npx postcss src/index.css -o dist/styles.css --config postcss.config.js
+```
+
+**CORRECT — match the actual file on disk:**
+```bash
+npx postcss-cli src/index.css -o dist/styles.css --config postcss.config.mjs
+```
+
+Also note that `.mjs` files must use `export default`, not `require()`:
+
+```javascript
+/* postcss.config.mjs — CORRECT */
+export default {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  }
+}
+```
+
+```javascript
+/* postcss.config.mjs — WRONG: require() is CommonJS, not valid in .mjs */
+export default {
+  plugins: [require("@tailwindcss/postcss")],
+}
+```
+
+### `npx postcss` Fails — Use `postcss-cli` or Skip CLI Entirely
+
+`postcss` is a **library**, not a CLI binary. Running `npx postcss ...` will fail with
+`"npm error could not determine executable to run"` because there is no `postcss` binary.
+
+**WRONG:**
+```bash
+npx postcss src/index.css -o dist/styles.css --config postcss.config.mjs
+```
+
+**CORRECT (if you need CLI):** install `postcss-cli` first:
+```bash
+npm install -D postcss-cli
+npx postcss-cli src/index.css -o dist/styles.css --config postcss.config.mjs
+```
+
+**PREFERRED for Vite/CRA/Next.js projects:** Do NOT run postcss CLI at all.
+PostCSS runs automatically during `npm run build` or `npm run dev` via the
+framework's build pipeline. Just ensure `postcss.config.mjs` (or `.js`) exists
+with `@tailwindcss/postcss` and add `@import "tailwindcss";` to your CSS file.
