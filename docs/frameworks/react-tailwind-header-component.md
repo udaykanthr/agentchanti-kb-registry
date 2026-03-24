@@ -33,8 +33,9 @@ const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <header className="fixed w-full top-0 z-50 bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <>
+      <header className="fixed w-full top-0 z-40 bg-white/80 backdrop-blur-md shadow-sm border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center">
@@ -80,6 +81,7 @@ const Header = () => {
           </div>
         </div>
       </div>
+      </header>
 
       {/* Mobile Menu Side Panel Overlay */}
       {isMobileMenuOpen && (
@@ -113,7 +115,7 @@ const Header = () => {
                     key={item}
                     href={`#${item.toLowerCase()}`}
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-lg text-base font-medium transition-colors"
+                    className="block text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-lg text-base font-medium transition-colors"
                   >
                     {item}
                   </a>
@@ -132,7 +134,7 @@ const Header = () => {
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 };
 
