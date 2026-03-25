@@ -184,3 +184,28 @@ export default Header;
 - **Stacking Context**: The mobile menu overlay is intentionally placed completely outside the `<header>` container as a sibling inside a React Fragment (`<>`). This structure prevents the `<header>`'s CSS `backdrop-blur` filter from stripping the overlay child's global `fixed` positioning dimensions.
 - **Padding Adjustment**: Make sure the parent container rendering `<Header />` has adequate top padding (e.g., `pt-16`) to account for the fixed header so background content isn't chopped off at the top. 
 - **Icons**: The component utilizes lightweight inline SVG paths (from Heroicons) to maintain a zero-dependency footprint apart from standard React and Tailwind classes.
+
+## Troubleshooting
+
+### Error: `Cannot destructure property 'basename' of 'useContext(...)' as it is null`
+
+**Cause:** You are using the `Header` component (which contains `<Link>` components from `react-router-dom`) outside of a Router context.
+
+**Solution:** Ensure that the root component or the component containing the `Header` is wrapped in a `<BrowserRouter>`.
+
+**Example Fix (in `main.jsx` or `App.jsx`):**
+```javascript
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
+)
+```
