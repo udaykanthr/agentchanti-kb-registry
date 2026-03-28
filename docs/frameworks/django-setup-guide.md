@@ -190,7 +190,19 @@ grep -r "ROOT_URLCONF" . --include="*.py"
 grep -r "DJANGO_SETTINGS_MODULE" manage.py
 ```
 
-Then edit only the file that matches those values.
+Then edit **only** the file that matches those values.
+
+**INSTALLED_APPS and apps.py `name` must use the importable module name, not a nested path.**
+When `manage.py` is at `<project_root>/manage.py` and the app is at `<project_root>/api/`:
+```python
+# CORRECT — 'api' is importable from the directory containing manage.py
+INSTALLED_APPS = [..., 'api']
+
+# apps.py
+class ApiConfig(AppConfig):
+    name = 'api'          # ← correct
+    # name = 'django_service.api'  ← WRONG — double-prefix, breaks makemigrations
+```
 
 ## Typical Next Steps
 - Define your models in `<app_name>/models.py`.
