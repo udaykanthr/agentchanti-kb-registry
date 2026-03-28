@@ -1,5 +1,5 @@
 ---
-id: "doc-012"
+id: "doc-014"
 title: "Anime.js Installation and Usage Guide"
 category: "doc"
 language: "javascript"
