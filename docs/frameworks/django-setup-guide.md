@@ -3,7 +3,7 @@ id: "doc-016"
 title: "Django Project Setup and Bootstrap Guide"
 category: "doc"
 language: "python"
-version: "1.0.0"
+version: "1.1.0"
 created_at: "2026-03-28"
 tags:
   - django
@@ -17,14 +17,19 @@ tags:
 
 This guide covers the end-to-end process of bootstrapping a new Django application, from installation to running the local development server.
 
+> **IMPORTANT — use the task's project name, not a hardcoded placeholder.**
+> Every `<project_name>` and `<app_name>` below must be replaced with the name
+> derived from the user's task description.  NEVER use `my_django_project` or
+> `myapp` verbatim unless the user explicitly requested those names.
+
 ## 1. Prerequisites and Virtual Environment
 
 It is a best practice to install Django within an isolated Python virtual environment.
 
 ```bash
-# Create a new directory for your project
-mkdir my_django_project
-cd my_django_project
+# Replace <project_name> with the actual project name from the task
+mkdir <project_name>
+cd <project_name>
 
 # Create a virtual environment named 'venv'
 python3 -m venv venv
@@ -59,9 +64,9 @@ Create the foundational Django project structure. The `.` at the end tells Djang
 django-admin startproject config .
 ```
 
-Your directory structure should now look like this:
+Your directory structure should now look like this (using `<project_name>` as the root):
 ```
-my_django_project/
+<project_name>/
 ├── config/
 │   ├── __init__.py
 │   ├── asgi.py
@@ -77,7 +82,8 @@ my_django_project/
 Django projects are composed of multiple distinct "apps". Create your first app using `manage.py`:
 
 ```bash
-python manage.py startapp myapp
+# Replace <app_name> with a name derived from the task (e.g. 'blog', 'api', 'users')
+python manage.py startapp <app_name>
 ```
 
 **Important:** You must register your new app in `config/settings.py` under the `INSTALLED_APPS` list:
@@ -88,9 +94,9 @@ python manage.py startapp myapp
 INSTALLED_APPS = [
     # ... default django apps ...
     'django.contrib.staticfiles',
-    
+
     # Local apps
-    'myapp',
+    '<app_name>',
 ]
 ```
 
@@ -127,8 +133,35 @@ You can now visit your app in the browser:
 - **Application Preview:** `http://127.0.0.1:8000/`
 - **Admin Interface:** `http://127.0.0.1:8000/admin/`
 
+## 8. Test File Organisation — Avoid `tests.py` vs `tests/` Conflict
+
+`python manage.py startapp <app_name>` creates a stub `<app_name>/tests.py`.  If you later
+organise tests in a **subdirectory** (`<app_name>/tests/test_views.py`), you must
+remove the stub first — otherwise Python's import system raises:
+
+```
+ImportError: 'tests' module incorrectly imported from '…/<app_name>/tests'.
+Expected '…/<app_name>'. Is this module globally installed?
+```
+
+**Option A — Single test file (simple projects):** keep `<app_name>/tests.py` and write
+all tests there.
+
+**Option B — Tests subdirectory:** delete the stub and create the package:
+
+```bash
+rm <app_name>/tests.py
+mkdir <app_name>/tests
+touch <app_name>/tests/__init__.py
+```
+
+Then place test files inside `<app_name>/tests/` (e.g. `test_views.py`, `test_models.py`).
+
+> Django discovers `tests/` packages automatically; the `__init__.py` is required
+> so Python treats the directory as a regular package, not a namespace package.
+
 ## Typical Next Steps
-- Define your models in `myapp/models.py`.
-- Register your models in `myapp/admin.py` to manage them in the admin dashboard.
-- Create views in `myapp/views.py` and map them to URLs via `myapp/urls.py`.
+- Define your models in `<app_name>/models.py`.
+- Register your models in `<app_name>/admin.py` to manage them in the admin dashboard.
+- Create views in `<app_name>/views.py` and map them to URLs via `<app_name>/urls.py`.
 - Add a `.gitignore` file to ignore the `venv/` directory, `db.sqlite3` file, and `__pycache__` folders before committing to version control.
