@@ -160,6 +160,38 @@ Then place test files inside `<app_name>/tests/` (e.g. `test_views.py`, `test_mo
 > Django discovers `tests/` packages automatically; the `__init__.py` is required
 > so Python treats the directory as a regular package, not a namespace package.
 
+## 9. Nested Layout — Two `urls.py` / `settings.py` Files
+
+When `django-admin startproject <name> .` is used, Django creates an **inner config
+package** with the same name as the project directory:
+
+```
+<project_name>/          ← project root (contains manage.py)
+├── manage.py
+├── <project_name>/      ← inner config package — THIS is what Django uses
+│   ├── __init__.py
+│   ├── settings.py      ← ROOT settings
+│   ├── urls.py          ← ROOT_URLCONF points here
+│   ├── asgi.py
+│   └── wsgi.py
+└── <app_name>/
+```
+
+**Critical rule:** `ROOT_URLCONF = '<project_name>.urls'` and
+`DJANGO_SETTINGS_MODULE = '<project_name>.settings'` both refer to files inside
+the **inner** `<project_name>/` package — NOT any file at the project root.
+
+Common agent mistake: editing `<project_root>/urls.py` (which Django never loads)
+instead of `<project_root>/<project_name>/urls.py`.
+
+**Before editing `urls.py` or `settings.py`, always verify the correct path:**
+```bash
+grep -r "ROOT_URLCONF" . --include="*.py"
+grep -r "DJANGO_SETTINGS_MODULE" manage.py
+```
+
+Then edit only the file that matches those values.
+
 ## Typical Next Steps
 - Define your models in `<app_name>/models.py`.
 - Register your models in `<app_name>/admin.py` to manage them in the admin dashboard.
