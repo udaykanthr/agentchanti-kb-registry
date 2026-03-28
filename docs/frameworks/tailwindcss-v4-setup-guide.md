@@ -3,8 +3,9 @@ id: "doc-008"
 title: "Tailwind CSS v4 Setup Guide"
 category: "doc"
 language: "all"
-version: "1.1.0"
+version: "1.2.0"
 created_at: "2026-03-04"
+updated_at: "2026-03-28"
 tags:
   - tailwindcss
   - tailwind
@@ -69,15 +70,35 @@ The `tailwind.config.js` / `tailwind.config.ts` configuration file is also
 
 Installing Tailwind CSS as a PostCSS plugin is the most seamless way to integrate it with frameworks like Next.js and Angular.
 
+> [!IMPORTANT]
+> **`postcss` ≠ `postcss-cli`**: `postcss` is a library with no CLI binary.
+> Running `npx postcss ...` requires `postcss-cli` to be installed separately.
+> If you only install `postcss`, `npx postcss` will fail with
+> `"npm error could not determine executable to run"`.
+
 ### Step 1: Install Tailwind CSS
 
 > [!IMPORTANT]
 > Tailwind CSS v4 is powered by Lightning CSS, which handles vendor prefixing automatically. You **no longer need** the `autoprefixer` package.
 
-Install `tailwindcss` and `@tailwindcss/postcss` via npm.
+**Option A — Framework projects (Next.js, Vite, Angular, etc.):**
+PostCSS runs automatically via the framework's build pipeline. Do NOT run `npx postcss` manually.
 
 ```bash
 npm install tailwindcss @tailwindcss/postcss postcss
+```
+
+**Option B — Standalone / non-framework projects (Django, Flask, plain HTML, etc.):**
+You need `postcss-cli` to run `npx postcss` from the command line.
+
+```bash
+npm install tailwindcss @tailwindcss/postcss postcss postcss-cli
+```
+
+Then build CSS with:
+
+```bash
+npx postcss src/styles.css -o dist/styles.css
 ```
 
 ### Step 2: Add Tailwind to your PostCSS configuration
@@ -128,7 +149,8 @@ Link your compiled CSS file and start using Tailwind's utility classes.
 
 | Feature | v3 (old) | v4 (current) |
 |---------|----------|--------------|
-| Install | `npm install tailwindcss postcss autoprefixer` | `npm install tailwindcss @tailwindcss/postcss postcss` |
+| Install (framework) | `npm install tailwindcss postcss autoprefixer` | `npm install tailwindcss @tailwindcss/postcss postcss` |
+| Install (CLI/standalone) | `npm install tailwindcss postcss autoprefixer` | `npm install tailwindcss @tailwindcss/postcss postcss postcss-cli` |
 | Init | `npx tailwindcss init -p` | Not needed |
 | Config | `tailwind.config.js` | Now configured directly in CSS or PostCSS config |
 | CSS import | `@tailwind base/components/utilities` | `@import "tailwindcss"` |
