@@ -15,95 +15,124 @@ tags:
 
 ## Installation
 
-You can install Anime.js via npm or include it directly in your HTML.
-
-### Via npm
+Install Anime.js via npm:
 ```bash
 npm install animejs
 ```
-Then import it in your JavaScript/TypeScript files:
+
+Anime.js has a very flexible modules-first API and excellent tree shaking support, making it one of the most lightweight JavaScript animation libraries.
+
+## Module Imports
+
+Anime.js modules can be imported straight from the main `animejs` module, or more granularly from specific subpaths (either by using a bundler like Vite/esbuild or natively without a build step using `importmap`).
+
+### Importing from the main module
+
+Every Anime.js module can be directly imported from the main module:
+
 ```javascript
-import anime from 'animejs/lib/anime.es.js';
-// or
-const anime = require('animejs');
+import { animate, splitText, stagger, random } from 'animejs';
+
+const split = splitText('p');
+
+animate(split.words, {
+  opacity: () => random(0, 1, 2),
+  delay: stagger(50),
+});
 ```
 
-### Via CDN (HTML)
+### Importing from subpaths
+
+When not using a bundler, or when tree shaking cannot be activated in a project, the entire library logic might unintentionally be loaded. To solve this, Anime.js allows importing specific functionality from a subpath.
+
+```javascript
+import { animate } from 'animejs/animation';
+import { splitText } from 'animejs/text';
+import { stagger, random } from 'animejs/utils';
+
+const split = splitText('p');
+
+animate(split.words, {
+  opacity: () => random(0, 1, 2),
+  delay: stagger(50),
+});
+```
+
+This approach ensures that only the code required for the specified functionality is loaded.
+
+**List of available subpaths:**
+```javascript
+import { animate } from 'animejs/animation';
+import { createTimer } from 'animejs/timer';
+import { createTimeline } from 'animejs/timeline';
+import { createAnimatable } from 'animejs/animatable';
+import { createDraggable } from 'animejs/draggable';
+import { createLayout } from 'animejs/layout';
+import { createScope } from 'animejs/scope';
+import { engine } from 'animejs/engine';
+import * as events from 'animejs/events';
+import * as easings from 'animejs/easings';
+import * as utils from 'animejs/utils';
+import * as svg from 'animejs/svg';
+import * as text from 'animejs/text';
+import * as waapi from 'animejs/waapi';
+```
+
+### Importing ES modules without a bundler
+
+With `importmap`, the main module and any of the subpath modules can be imported just like with a bundler, but without a build step in the browser:
+
 ```html
-<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
-```
-
-## Usage Guidelines
-
-Anime.js is a lightweight JavaScript animation library with a simple, yet powerful API. It works with CSS properties, SVG, DOM attributes, and JavaScript Objects.
-
-### Basic Animation
-```javascript
-anime({
-  targets: '.css-selector',
-  translateX: 250,
-  duration: 800,
-  easing: 'easeInOutQuad'
-});
-```
-
-### Timeline
-To sequence multiple animations, use `anime.timeline()`:
-```javascript
-const timeline = anime.timeline({
-  easing: 'easeOutExpo',
-  duration: 750
-});
-
-timeline
-.add({
-  targets: '.box1',
-  translateX: 250,
-})
-.add({
-  targets: '.box2',
-  translateX: 250,
-  offset: '-=500' // Starts 500ms before previous animation ends
-});
-```
-
-### React/Vue Integration
-When using Anime.js in UI frameworks like React or Vue, it's best to use `useRef` or template refs instead of CSS selectors to ensure you target the correct DOM element.
-
-**React Example:**
-```javascript
-import { useEffect, useRef } from 'react';
-import anime from 'animejs';
-
-function AnimatedBox() {
-  const boxRef = useRef(null);
-
-  useEffect(() => {
-    anime({
-      targets: boxRef.current,
-      translateX: 100,
-      duration: 1000
-    });
-  }, []);
-
-  return <div ref={boxRef} className="box"></div>;
+<script type="importmap">
+{
+  "imports": {
+    "animejs": "/node_modules/animejs/dist/modules/index.js",
+    "animejs/animation": "/node_modules/animejs/dist/modules/animation/index.js",
+    "animejs/timer": "/node_modules/animejs/dist/modules/timer/index.js",
+    "animejs/timeline": "/node_modules/animejs/dist/modules/timeline/index.js",
+    "animejs/animatable": "/node_modules/animejs/dist/modules/animatable/index.js",
+    "animejs/draggable": "/node_modules/animejs/dist/modules/draggable/index.js",
+    "animejs/layout": "/node_modules/animejs/dist/modules/layout/index.js",
+    "animejs/scope": "/node_modules/animejs/dist/modules/scope/index.js",
+    "animejs/engine": "/node_modules/animejs/dist/modules/engine/index.js",
+    "animejs/events": "/node_modules/animejs/dist/modules/events/index.js",
+    "animejs/easings": "/node_modules/animejs/dist/modules/easings/index.js",
+    "animejs/utils": "/node_modules/animejs/dist/modules/utils/index.js",
+    "animejs/svg": "/node_modules/animejs/dist/modules/svg/index.js",
+    "animejs/text": "/node_modules/animejs/dist/modules/text/index.js",
+    "animejs/waapi": "/node_modules/animejs/dist/modules/waapi/index.js"
+  }
 }
+</script>
+
+<script type="module">
+  import { animate } from 'animejs/animation';
+  import { splitText } from 'animejs/text';
+  import { stagger, random } from 'animejs/utils';
+
+  const split = splitText('p');
+
+  animate(split.words, {
+    opacity: () => random(0, 1, 2),
+    delay: stagger(50),
+  });
+</script>
 ```
 
 ## Error Troubleshooting
 
-### `targets is undefined or cannot be found`
-**Cause:** Anime.js cannot find the specified target elements in the DOM. This often happens if the animation code runs before the DOM is fully loaded or if framework components (React/Vue) haven't mounted yet.
+### `SyntaxError: Cannot use import statement outside a module`
+**Cause:** Attempting to use Anime.js ES modules in a standard `<script>` tag without `type="module"`, or in a Node.js environment without ES module support configured.
 **Fix:**
-- Ensure your script runs after the DOM is ready, or place the `<script>` tag at the end of the `<body>`.
-- In React/Vue, execute animations inside `useEffect` (React) or `onMounted` (Vue) using references or refs.
+- In the browser, ensure your script tag uses `type="module"`: `<script type="module" src="app.js"></script>`.
+- Or, if you use Node.js to bundle, ensure your `package.json` contains `"type": "module"`.
 
-### `anime is not a function`
-**Cause:** The Anime.js library was not imported correctly or the ES6 module path is wrong.
+### `Uncaught TypeError: Failed to resolve module specifier "animejs".`
+**Cause:** The browser does not know how to resolve bare imports like `'animejs'` dynamically without an import map or a build step.
 **Fix:**
-Make sure you are importing from the correct path. For ES modules, use `import anime from 'animejs/lib/anime.es.js';`.
+Provide an `<script type="importmap">` mapping the bare specifier to a valid local or CDN URL, or run your code through a bundler like Vite.
 
-### `TypeError: Cannot read properties of undefined (reading 'style')`
-**Cause:** One of the targets passed to Anime.js is not a valid DOM node, or it was removed from the DOM before or during the animation.
+### `animate is not exported from 'animejs'`
+**Cause:** Trying to use `import { animate } from 'animejs';` on an older version of Anime.js (v3 or below).
 **Fix:**
-Check that you are passing valid DOM nodes or valid query selectors. If using an array of targets, ensure there are no `null` or `undefined` elements.
+Ensure you have installed the latest version of Anime.js that supports the modules-first API (`npm i animejs@next` or similar, depending on the release branch).
