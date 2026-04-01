@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
+  "version": "1.0.23",
   "created_at": "2026-02-24",
   "changelog": "Initial registry release",
   "categories": {
@@ -22,7 +22,7 @@
       "total_files": 4
     },
     "docs": {
-      "total_files": 13
+      "total_files": 16
     },
     "behavioral": {
       "total_files": 8

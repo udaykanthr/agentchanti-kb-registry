@@ -5,6 +5,7 @@ category: "doc"
 language: "all"
 version: "1.2.0"
 created_at: "2026-03-04"
+updated_at: "2026-03-28"
 tags:
   - tailwindcss
   - tailwind
