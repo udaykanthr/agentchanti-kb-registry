@@ -40,9 +40,14 @@ npm install tailwindcss @tailwindcss/postcss postcss
 
 > No `autoprefixer` needed — Lightning CSS handles vendor prefixing automatically.
 
-### Step 2: Create PostCSS config
+### Step 2: Write PostCSS config — MUST be a [CODE] plan step
 
-Create `postcss.config.mjs` (use `.mjs`, not `.js`, for Vite projects):
+> **CRITICAL**: Write `postcss.config.mjs` as a **`[CODE]`** plan step with a `content:` block.
+> **NEVER** use a `[CMD]` step with `touch`, `type nul >`, `echo >`, or any shell command
+> to create this file — those produce an empty file with no plugin configuration, which
+> silently breaks Tailwind processing (no styles are generated, no error is thrown).
+
+Target file: `<project>/postcss.config.mjs` (use `.mjs`, not `.js`, for Vite projects)
 
 ```js
 /* postcss.config.mjs */
@@ -55,7 +60,10 @@ export default {
 
 > For CommonJS projects only, use `postcss.config.cjs` with `module.exports = { ... }`.
 
-### Step 3: Add CSS import
+### Step 3: Write CSS import — MUST be a [CODE] plan step
+
+> **CRITICAL**: Write `src/index.css` as a **`[CODE]`** plan step. Do not use a shell
+> command to create or truncate it.
 
 In your main CSS file (e.g. `src/index.css`):
 
