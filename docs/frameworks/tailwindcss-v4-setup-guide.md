@@ -23,7 +23,14 @@ tags:
 **IMPORTANT**: Tailwind CSS v4 (released 2025) completely replaced the v3 setup.
 `npx tailwindcss init`, `tailwind.config.js`, and `@tailwind` directives are **gone**.
 
+Use this guide when setting up Tailwind CSS v4 with Vite, React, or any PostCSS-based
+framework. Required packages: `tailwindcss`, `@tailwindcss/postcss`, `postcss`.
+The PostCSS config file for Vite projects must be `postcss.config.mjs` (not `.js`).
+The CSS entry point uses a single `@import "tailwindcss"` line — no `@tailwind` directives.
+
 ## Correct Installation (PostCSS + Vite)
+
+Install and configure Tailwind CSS v4 as a PostCSS plugin. Works with Vite, React, Next.js, and Angular.
 
 ### Step 1: Install packages
 
