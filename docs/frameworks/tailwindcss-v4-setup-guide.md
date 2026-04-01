@@ -3,9 +3,9 @@ id: "doc-008"
 title: "Tailwind CSS v4 Setup Guide"
 category: "doc"
 language: "all"
-version: "1.2.0"
+version: "1.3.0"
 created_at: "2026-03-04"
-updated_at: "2026-03-28"
+updated_at: "2026-04-01"
 tags:
   - tailwindcss
   - tailwind
