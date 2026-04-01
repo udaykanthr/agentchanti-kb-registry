@@ -6,9 +6,12 @@ Automates the full registry update workflow:
   1. Detect changed files (vs origin/main or HEAD)
   2. Run validate.py  — abort on failure
   3. Run index_check.py — warn on failure
-  4. Bump manifest.json version + recount categories
+  4. Update manifest.json category counts (version left for CI to bump on merge)
   5. Git commit + push to feature branch
-  6. Create GitHub PR with auto-filled PR template
+  6. Create GitHub PR with auto-filled PR template + bump label
+
+The bump label (bump:patch / bump:minor / bump:major) is applied to the PR
+so that CI runs bump_version.py once on merge — avoiding double-bumps.
 
 Usage:
     python scripts/publish.py                         # auto-detect bump type
@@ -20,7 +23,6 @@ Usage:
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -77,7 +79,7 @@ def ensure_feature_branch(changed_files: list[str]) -> str:
             for f in changed_files
             if not f.endswith("manifest.json") and not f.startswith("scripts/")
         ]
-        slug = (slugs[0][:40] if slugs else "kb-update")
+        slug = slugs[0][:40] if slugs else "kb-update"
         branch = f"update/{slug}"
         _git(["checkout", "-b", branch], capture=False)
         print(f"  Created branch: {branch}")
@@ -116,13 +118,17 @@ def run_script(script_name: str) -> tuple[int, str]:
     return r.returncode, r.stdout + r.stderr
 
 # ---------------------------------------------------------------------------
-# Manifest bump
+# Manifest — counts only (version bumped by CI on merge)
 # ---------------------------------------------------------------------------
 
-def count_categories() -> dict:
-    categories: dict = {}
+def update_manifest_counts(dry_run: bool = False) -> None:
+    """Recount category totals in manifest.json. Does NOT touch the version."""
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    current_version = manifest.get("version", "?")
 
-    # Error entries (YAML lists)
+    categories = manifest.get("categories", {})
+
+    # Error entries
     total = 0
     errors_dir = ROOT / "errors"
     if errors_dir.exists():
@@ -136,49 +142,28 @@ def count_categories() -> dict:
                 except Exception:
                     pass
         except ImportError:
-            # yaml not available — keep existing count
-            manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-            total = manifest.get("categories", {}).get("errors", {}).get("total_entries", 0)
-    categories["errors"] = {"total_entries": total}
+            total = categories.get("errors", {}).get("total_entries", 0)
+    categories.setdefault("errors", {})["total_entries"] = total
 
-    # .md file counts per category directory
+    # Preserve languages list
+    old_langs = manifest.get("categories", {}).get("errors", {}).get("languages")
+    if old_langs:
+        categories["errors"]["languages"] = old_langs
+
+    # .md file counts per category
     for cat in ("patterns", "adrs", "docs", "behavioral"):
         d = ROOT / cat
         count = len(list(d.rglob("*.md"))) if d.exists() else 0
         categories[cat] = {"total_files": count}
 
-    return categories
-
-
-def bump_manifest(bump_type: str, changelog: str, dry_run: bool = False) -> str:
-    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    v = manifest.get("version", "1.0.0")
-    m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", v)
-    major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
-
-    if bump_type == "major":
-        new_ver = f"{major+1}.0.0"
-    elif bump_type == "minor":
-        new_ver = f"{major}.{minor+1}.0"
-    else:
-        new_ver = f"{major}.{minor}.{patch+1}"
+    manifest["categories"] = categories
 
     if dry_run:
-        print(f"  manifest.json: {v} → {new_ver} (not written in dry-run)")
-        return new_ver
-
-    manifest["version"] = new_ver
-    manifest["changelog"] = changelog
-    manifest["categories"] = count_categories()
-
-    # Preserve languages list under errors if it existed
-    old_errors = json.loads(MANIFEST_PATH.read_text(encoding="utf-8")).get("categories", {}).get("errors", {})
-    if "languages" in old_errors:
-        manifest["categories"]["errors"]["languages"] = old_errors["languages"]
+        print(f"  manifest.json counts updated (dry-run, not written) — version stays at {current_version}")
+        return
 
     MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"  manifest.json → v{new_ver}")
-    return new_ver
+    print(f"  manifest.json category counts updated (version stays at {current_version} — CI bumps on merge)")
 
 # ---------------------------------------------------------------------------
 # PR body builder
@@ -191,16 +176,13 @@ def build_pr_body(
     bump_type: str,
     validation_passed: bool,
     index_passed: bool,
-    new_version: str,
 ) -> str:
-    # Content description
     relevant = [(f, t) for f, t in file_summaries if "manifest.json" not in f]
-    if relevant:
-        desc = "\n".join(f"- `{f}` — {title}" for f, title in relevant)
-    else:
-        desc = "_(see changed files)_"
+    desc = (
+        "\n".join(f"- `{f}` — {title}" for f, title in relevant)
+        if relevant else "_(see changed files)_"
+    )
 
-    # Content type checkboxes
     type_map = [
         ("error",      "`error` — New or updated error entries in `errors/`"),
         ("pattern",    "`pattern` — New or updated coding pattern in `patterns/`"),
@@ -263,7 +245,7 @@ def build_pr_body(
 - [ ] Tested `agentchanti kb seed` picks up this content locally
 
 ### Manifest
-- [x] Updated `manifest.json` → v{new_version} (category counts auto-recalculated)
+- [x] `manifest.json` category counts updated (version will be bumped by CI on merge)
 
 ---
 
@@ -284,13 +266,13 @@ Closes #_(issue number, if applicable)_"""
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate, bump, commit, push, and open a PR for KB registry changes."
+        description="Validate, update counts, commit, push, and open a PR for KB registry changes."
     )
     parser.add_argument(
         "--bump", choices=["patch", "minor", "major"],
-        help="Version bump type. Default: 'minor' if new files added, else 'patch'.",
+        help="Version bump type applied via PR label. Default: 'minor' if new files, else 'patch'.",
     )
-    parser.add_argument("--message", help="Changelog / commit message suffix.")
+    parser.add_argument("--message", help="Commit message / PR title suffix.")
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Run validation and show the PR body without pushing anything.",
@@ -327,18 +309,23 @@ def main() -> int:
     if not index_passed:
         print("  WARNING: index check had issues — continuing.")
 
-    # 4. Infer PR metadata from changed files
+    # 4. Collect PR metadata
     content_types: set[str] = set()
     languages: set[str] = set()
     file_summaries: list[tuple[str, str]] = []
     has_new_files = False
 
+    _dir_to_type = {
+        "errors": "error", "patterns": "pattern", "adrs": "adr",
+        "docs": "doc", "behavioral": "behavioral",
+    }
     for f in changed:
         p = ROOT / f
         parts = Path(f).parts
-        if parts[0] in ("errors", "patterns", "adrs", "docs", "behavioral"):
-            content_types.add(parts[0].rstrip("s") if parts[0] not in ("errors", "adrs") else parts[0][:-1])
-        if f.endswith(".md") and p.exists() and parts[0] != ".github":
+        top = parts[0] if parts else ""
+        if top in _dir_to_type:
+            content_types.add(_dir_to_type[top])
+        if f.endswith(".md") and p.exists() and top != ".github":
             fm = read_frontmatter(p)
             file_summaries.append((f, fm.get("title", f)))
             if fm.get("language"):
@@ -346,26 +333,12 @@ def main() -> int:
         if is_new_file(f):
             has_new_files = True
 
-    # Fix category names: "error" not "error", "pattern" not "pattern", etc.
-    # The content_types derivation above strips trailing 's' from dirs like "docs" -> "doc"
-    # Re-derive cleanly:
-    content_types = set()
-    _dir_to_type = {
-        "errors": "error", "patterns": "pattern", "adrs": "adr",
-        "docs": "doc", "behavioral": "behavioral",
-    }
-    for f in changed:
-        top = Path(f).parts[0] if Path(f).parts else ""
-        if top in _dir_to_type:
-            content_types.add(_dir_to_type[top])
-
     bump_type = args.bump or ("minor" if has_new_files else "patch")
 
-    # Build changelog string
     if args.message:
         changelog = args.message
     else:
-        titles = [t for _, t in file_summaries if "manifest" not in _]
+        titles = [t for fp, t in file_summaries if "manifest.json" not in fp]
         if titles:
             changelog = "Updated: " + ", ".join(titles[:3])
             if len(titles) > 3:
@@ -373,13 +346,13 @@ def main() -> int:
         else:
             changelog = f"KB registry update (bump:{bump_type})"
 
-    # 4. Bump manifest
-    print(f"\n[4/5] Bumping manifest.json ({bump_type})...")
-    new_version = bump_manifest(bump_type, changelog, dry_run=args.dry_run)
+    # 4. Update manifest counts only (no version bump — CI handles that on merge)
+    print("\n[4/5] Updating manifest.json category counts...")
+    update_manifest_counts(dry_run=args.dry_run)
 
     pr_body = build_pr_body(
         file_summaries, content_types, languages,
-        bump_type, validation_passed, index_passed, new_version,
+        bump_type, validation_passed, index_passed,
     )
 
     if args.dry_run:
@@ -419,7 +392,7 @@ def main() -> int:
     if r.returncode == 0:
         print(f"\n  PR created: {r.stdout.strip()}")
     else:
-        # Label may not exist in repo — retry without it
+        # Label may not exist in the repo yet — retry without it
         print(f"  Note: could not apply label 'bump:{bump_type}' ({r.stderr.strip()})")
         r2 = subprocess.run(
             ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
