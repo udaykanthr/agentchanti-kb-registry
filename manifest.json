@@ -1,9 +1,10 @@
 {
-  "version": "1.0.24",
+  "version": "1.1.0",
   "created_at": "2026-02-24",
-  "changelog": "Initial registry release",
+  "changelog": "updated tailwind css v4 setup to smplified",
   "categories": {
     "errors": {
+      "total_entries": 82,
       "languages": [
         "python",
         "javascript",
@@ -12,8 +13,7 @@
         "go",
         "rust",
         "csharp"
-      ],
-      "total_entries": 82
+      ]
     },
     "patterns": {
       "total_files": 14

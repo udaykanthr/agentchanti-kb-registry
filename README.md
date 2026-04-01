@@ -181,13 +181,42 @@ agentchanti kb version
 
 ## Contributing Guide
 
+### Automated (recommended)
+
+Use `publish.py` to run all steps in one command:
+
+```bash
+# Preview everything without pushing (validate + show PR body)
+python scripts/publish.py --dry-run
+
+# Publish a content fix — auto-detects changed files, bumps patch version
+python scripts/publish.py
+
+# Add a custom changelog message
+python scripts/publish.py --message "Fix postcss config filename for Vite projects"
+
+# Force a bump type (default: patch for edits, minor for new files)
+python scripts/publish.py --bump minor
+python scripts/publish.py --bump major --message "Breaking: renamed all doc IDs"
+```
+
+`publish.py` automatically:
+1. Runs `validate.py` — aborts on failure
+2. Runs `index_check.py` — warns on failure
+3. Bumps `manifest.json` version and recounts category totals
+4. Creates a feature branch if you're on `main`
+5. Commits, pushes, and opens a GitHub PR with the template pre-filled
+
+### Manual
+
 1. Fork the repository.
 2. Create a branch: `git checkout -b add/py-error-sqlalchemy`
 3. Add your content following the schemas above.
 4. Run validation locally: `python scripts/validate.py`
 5. Run index check: `python scripts/index_check.py`
-6. Open a PR with the provided template.
-7. Address any CI failures — the bot will comment with specific issues.
-8. Once approved and merged, the version auto-bumps and a release is created.
+6. Update `manifest.json` version and category counts.
+7. Open a PR with the provided template.
+8. Address any CI failures — the bot will comment with specific issues.
+9. Once approved and merged, the version auto-bumps and a release is created.
 
 **Quality bar:** All content must be production-ready. No placeholder text. Error patterns must match real error messages. Fix templates must contain working code examples. Behavioral instructions must be specific and actionable.
