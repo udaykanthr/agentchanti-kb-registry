@@ -3,8 +3,9 @@ id: "doc-010"
 title: "Vitest React Setup Guide"
 category: "doc"
 language: "javascript"
-version: "1.0.0"
+version: "1.1.0"
 created_at: "2026-03-07"
+updated_at: "2026-04-02"
 tags:
   - vitest
   - react
@@ -72,3 +73,89 @@ with Vitest's `expect`.
    `expect.extend is not a function` or matchers not being registered.
 4. **Missing `@vitejs/plugin-react`**: Without the React plugin, Vite cannot transform
    JSX in `.jsx`/`.tsx` files, causing parse errors in tests.
+
+## Do NOT generate tests for scaffold config files
+
+`postcss.config.mjs`, `vitest.config.js`, `vite.config.js`, and `vitest.setup.js` are
+framework scaffolding — not application logic. Never auto-generate `.test.` files for them.
+
+Two failures result when you do:
+1. Auto-generators default to `node:test`/`assert` (incompatible with Vitest) — the
+   baseline run fails before component tests even execute.
+2. Tests call `require('../postcss.config.mjs')` on an ESM-only file — throws `ERR_REQUIRE_ESM`.
+3. Tests that try to dynamically `import()` `vitest.config.js` inside a test run will fail
+   because importing a Vitest config from within Vitest itself creates circular issues.
+
+## Multi-file TEST step: always include file-path comment headers
+
+When a plan step targets multiple test files (e.g., `Header.test.jsx`, `Hero.test.jsx`,
+`App.test.jsx`) and provides all their content in one content block, each section MUST
+start with a `// path/to/file.ext` comment so the parser can split them correctly:
+
+```jsx
+// src/components/Header.test.jsx
+import { render, screen } from '@testing-library/react'
+...Header tests...
+
+// src/components/Hero.test.jsx
+import { render, screen } from '@testing-library/react'
+...Hero tests...
+
+// src/App.test.jsx
+import { render, screen } from '@testing-library/react'
+...App tests...
+```
+
+Without these headers, ALL content gets written to the first target file, causing duplicate
+`import` declarations and broken relative import paths.
+
+## Testing components that use react-router-dom
+
+Components that use `<Link>`, `<NavLink>`, or Router hooks MUST be wrapped in
+`<MemoryRouter>` in tests. Never use `<BrowserRouter>` in tests.
+
+```jsx
+import { MemoryRouter } from 'react-router-dom'
+
+it('renders nav links', () => {
+  render(
+    <MemoryRouter>
+      <Header />
+    </MemoryRouter>
+  )
+  expect(screen.getByRole('link', { name: /home/i })).toBeInTheDocument()
+})
+```
+
+If the component under test is `App` and `App` already contains `<BrowserRouter>`,
+do NOT add another `<MemoryRouter>` wrapper — that causes "You cannot render a
+`<Router>` inside another `<Router>`". Instead render `<App />` directly, or mock
+`BrowserRouter` to use `MemoryRouter`:
+
+```jsx
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom')
+  return {
+    ...actual,
+    BrowserRouter: ({ children }) => (
+      <actual.MemoryRouter initialEntries={['/']}>{children}</actual.MemoryRouter>
+    ),
+  }
+})
+
+render(<App />) // no extra MemoryRouter wrapper needed
+```
+
+## Testing Tailwind-styled components
+
+Use `toHaveClass()`, never regex on `className`. Tailwind modifier classes (`md:flex`,
+`hover:bg-cyan-300`, `-translate-x-full`) break regex word-boundary matching.
+
+```js
+// WRONG
+expect(element.className).toMatch(/md:hidden/)
+
+// CORRECT
+expect(element).toHaveClass('md:hidden')
+expect(element).not.toHaveClass('hidden')
+```
