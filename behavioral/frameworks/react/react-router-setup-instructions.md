@@ -2,7 +2,7 @@
 id: "beh-009"
 title: "React Router Setup Instructions"
 category: "behavioral"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-04-02"
 tags:

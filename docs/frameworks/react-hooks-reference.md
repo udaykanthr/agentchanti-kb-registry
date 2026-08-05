@@ -2,7 +2,7 @@
 id: "doc-006"
 title: "React Hooks Reference"
 category: "doc"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-02-24"
 tags:

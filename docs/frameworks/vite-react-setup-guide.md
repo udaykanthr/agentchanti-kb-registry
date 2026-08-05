@@ -2,7 +2,7 @@
 id: "doc-009"
 title: "Vite React Setup Guide"
 category: "doc"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-03-07"
 tags:

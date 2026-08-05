@@ -2,7 +2,7 @@
 id: "doc-012"
 title: "React TailwindCSS Responsive Header"
 category: "doc"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-03-24"
 tags:

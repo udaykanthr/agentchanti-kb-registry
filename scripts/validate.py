@@ -11,6 +11,8 @@ Checks:
   e. severity values are only: critical | warning | info
   f. category values are only: pattern | adr | doc | behavioral | error
   g. language values are only: all | python | javascript | typescript | java | go | rust | csharp
+     (a comma-separated list is allowed, e.g. "javascript, typescript";
+      every element must still be from that set, and "all" must stand alone)
   h. version follows semver format X.Y.Z
 
 Exit code 0 if all checks pass, 1 if any check fails.
@@ -258,13 +260,34 @@ def check_category_values(md_frontmatters: dict[str, dict]):
 # ─── Check G: language values ─────────────────────────────────────────────────
 
 def check_language_values(md_frontmatters: dict[str, dict]):
+    """A doc may serve several languages, e.g. "javascript, typescript".
+
+    React/Vite material is equally valid in a TypeScript project, and a
+    single value cannot express that — before lists were allowed such a doc
+    had to claim "all" to reach both, which made it reachable from Python
+    too and defeated the filter entirely.
+
+    "all" already means every language, so listing it alongside others is
+    contradictory and is rejected rather than silently widened.
+    """
     fail_count = 0
 
     for path_str, fm in md_frontmatters.items():
         rel = Path(path_str).relative_to(ROOT)
-        lang = str(fm.get("language", "")).strip()
-        if lang not in VALID_LANGUAGES:
-            results.fail("language", f"  ✗ {rel}: Invalid language \"{lang}\" (must be: {', '.join(sorted(VALID_LANGUAGES))})")
+        raw = str(fm.get("language", "")).strip()
+        parts = [p.strip() for p in raw.split(",") if p.strip()]
+        invalid = [p for p in parts if p not in VALID_LANGUAGES]
+        if not parts:
+            results.fail("language", f"  ✗ {rel}: Missing language value")
+            fail_count += 1
+        elif invalid:
+            results.fail("language", f"  ✗ {rel}: Invalid language \"{', '.join(invalid)}\" (must be: {', '.join(sorted(VALID_LANGUAGES))})")
+            fail_count += 1
+        elif "all" in parts and len(parts) > 1:
+            results.fail("language", f"  ✗ {rel}: \"all\" already covers every language — do not combine it with {', '.join(p for p in parts if p != 'all')}")
+            fail_count += 1
+        elif len(parts) != len(set(parts)):
+            results.fail("language", f"  ✗ {rel}: Duplicate language(s) in \"{raw}\"")
             fail_count += 1
 
     if fail_count == 0:
