@@ -2,7 +2,7 @@
 id: "doc-010"
 title: "Vitest React Setup Guide"
 category: "doc"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.1.0"
 created_at: "2026-03-07"
 updated_at: "2026-04-02"

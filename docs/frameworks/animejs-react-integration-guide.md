@@ -2,7 +2,7 @@
 id: "doc-015"
 title: "Anime.js v4 React Integration Guide"
 category: "doc"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-03-28"
 tags:

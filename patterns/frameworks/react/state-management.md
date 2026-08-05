@@ -2,7 +2,7 @@
 id: "react-pattern-002"
 title: "React State Management Patterns"
 category: "pattern"
-language: "javascript"
+language: "javascript, typescript"
 version: "1.0.0"
 created_at: "2026-02-24"
 tags:
